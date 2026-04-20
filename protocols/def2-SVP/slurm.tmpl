@@ -1,0 +1,35 @@
+#!/bin/bash -l
+#SBATCH --clusters=__CLUSTER__
+#SBATCH --partition=__PARTITION__
+#SBATCH --account=__ACCOUNT__
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=__CPUS__
+#SBATCH --time=__TIME__
+#SBATCH --mem=__MEM__
+#SBATCH --job-name=__MOLECULE__-cosmo-svp
+#SBATCH --output=scf-cosmo.out
+#SBATCH --error=scf-cosmo.err
+
+set -euo pipefail
+
+INDIR=__INDIR__
+WORKDIR=$VSC_SCRATCH/__MOLECULE__-dscf-$SLURM_JOB_ID
+mkdir -p "$WORKDIR"
+cd "$WORKDIR"
+
+source __TURBOMOLE_ROOT__/vars
+export PARA_ARCH=SMP
+export TURBOMOLE_SYSNAME=__SYSNAME__
+export PATH=__TURBOMOLE_ROOT__/bin/$TURBOMOLE_SYSNAME:__TURBOMOLE_ROOT__/scripts:$PATH
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+
+cp -a "$INDIR"/control "$INDIR"/coord "$INDIR"/basis "$INDIR"/mos ./
+
+dscf > dscf.out
+
+echo "Run finished. Files created:"
+ls -lah
+
+cp -a dscf.out "$INDIR"/
+cp -a *.cosmo *.ccf "$INDIR"/ 2>/dev/null || true

@@ -1,0 +1,33 @@
+# turbomole-cosmo / config.sh
+# -----------------------------------------------------------------------------
+# Edit this once for your environment. All scripts source it.
+# -----------------------------------------------------------------------------
+
+# --- TURBOMOLE installation ---------------------------------------------------
+export TURBOMOLE_ROOT="/data/leuven/301/vsc30101/turbomole7.8"
+export TURBOMOLE_SYSNAME="em64t-unknown-linux-gnu"
+
+# --- VSC / SLURM defaults -----------------------------------------------------
+export CLUSTER="wice"
+export PARTITION="batch"
+export ACCOUNT="lp_cheme_cfd"
+export USER_BASE="/vsc-hard-mounts/leuven-user/385/vsc38535/my_turbomole"
+
+# --- Default protocol ---------------------------------------------------------
+export DEFAULT_PROTOCOL="BP-TZVPD-FINE"
+
+# --- Per-protocol SLURM resource defaults ------------------------------------
+# def2-SVP: cheap, serial dscf
+export SLURM_SVP_CPUS=4
+export SLURM_SVP_MEM="20000M"
+export SLURM_SVP_TIME="06:00:00"
+
+# BP-TZVPD-FINE: BP86 + RI + TZVPD + m4 + fine cavity; needs fat node
+export SLURM_FINE_CPUS=16
+export SLURM_FINE_MEM="120000M"
+export SLURM_FINE_TIME="72:00:00"
+
+# --- Repo self-location -------------------------------------------------------
+if [[ -z "${REPO_ROOT:-}" ]]; then
+  export REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
