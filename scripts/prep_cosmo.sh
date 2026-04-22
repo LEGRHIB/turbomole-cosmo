@@ -39,11 +39,8 @@ if [[ ! -d "$MOL_DIR" ]]; then
 fi
 if [[ ! -f "$MOL_DIR/$MOLECULE.xyz" ]]; then
   echo "ERROR: $MOL_DIR/$MOLECULE.xyz not found." >&2
-  echo "       Convert your PDB to XYZ first using Avogadro (Open OnDemand VNC):" >&2
-  echo "       1. Open .pdb in Avogadro" >&2
-  echo "       2. Build -> Add Hydrogens" >&2
-  echo "       3. Save As -> $MOLECULE.xyz" >&2
-  echo "       4. Place in $MOL_DIR/" >&2
+  echo "       Run prepare_molecule.py first to generate the XYZ:" >&2
+  echo "       python3 scripts/prepare_molecule.py <input.pdb> $MOLECULE <pH> [--chains A,C]" >&2
   exit 2
 fi
 if [[ ! -d "$PROTO_DIR" ]]; then
@@ -70,9 +67,20 @@ export PARA_ARCH=SMP
 export TURBOMOLE_SYSNAME
 export PATH="$TURBOMOLE_ROOT/bin/$TURBOMOLE_SYSNAME:$TURBOMOLE_ROOT/scripts:$PATH"
 
+# --- Read molecular charge ----------------------------------------------------
+CHARGE_FILE="$MOL_DIR/charge.txt"
+if [[ -f "$CHARGE_FILE" ]]; then
+  CHARGE="$(cat "$CHARGE_FILE" | tr -d '[:space:]')"
+else
+  echo "WARN: $CHARGE_FILE not found — defaulting to charge=0" >&2
+  echo "      Run prepare_molecule.py first for correct pH-dependent charge." >&2
+  CHARGE="0"
+fi
+
 echo "=== prep_cosmo ==="
 echo "  Molecule: $MOLECULE"
 echo "  Protocol: $PROTOCOL"
+echo "  Charge:   $CHARGE"
 echo "  Workdir : $MOL_DIR"
 echo
 
@@ -89,9 +97,11 @@ fi
 echo "      coord ok ($(wc -l < coord) lines)"
 
 # --- Step 2: define -----------------------------------------------------------
-echo "[2/4] define < $PROTOCOL/define.in"
+echo "[2/4] define < $PROTOCOL/define.in (charge=$CHARGE)"
 rm -f control basis mos auxbasis
-if ! define < "$PROTO_DIR/define.in" > "$LOG_DIR/define.log" 2>&1; then
+DEFINE_TMP="$(mktemp)"
+sed "s/__CHARGE__/$CHARGE/g" "$PROTO_DIR/define.in" > "$DEFINE_TMP"
+if ! define < "$DEFINE_TMP" > "$LOG_DIR/define.log" 2>&1; then
   echo "ERROR: define exited non-zero. See $LOG_DIR/define.log" >&2
   tail -n 30 "$LOG_DIR/define.log" >&2
   exit 5
@@ -108,7 +118,7 @@ echo "      control/basis/mos ok"
 # --- Step 3: cosmoprep --------------------------------------------------------
 echo "[3/4] cosmoprep < $PROTOCOL/cosmoprep.in (with __MOLECULE__ = $MOLECULE)"
 COSMO_TMP="$(mktemp)"
-trap 'rm -f "$COSMO_TMP"' EXIT
+trap 'rm -f "$COSMO_TMP" "$DEFINE_TMP"' EXIT
 sed "s/__MOLECULE__/$MOLECULE/g" "$PROTO_DIR/cosmoprep.in" > "$COSMO_TMP"
 if ! cosmoprep < "$COSMO_TMP" > "$LOG_DIR/cosmoprep.log" 2>&1; then
   echo "ERROR: cosmoprep exited non-zero. See $LOG_DIR/cosmoprep.log" >&2
@@ -129,8 +139,8 @@ if ! grep -q "^\$cosmo_out file=$MOLECULE.cosmo" control; then
 fi
 echo "      \$cosmo_out ok"
 
-# Protocol-specific sanity (BP-TZVPD-FINE must have DFT + RI)
-if [[ "$PROTOCOL" == "BP-TZVPD-FINE" ]]; then
+# Protocol-specific sanity (BP-TZVPD-* must have DFT + RI)
+if [[ "$PROTOCOL" == BP-TZVPD-* ]]; then
   for needle in '\$dft' '\$rij' 'def2-TZVPD'; do
     if ! grep -q "$needle" control basis 2>/dev/null; then
       echo "WARN: expected '$needle' in control/basis for $PROTOCOL but not found" >&2
