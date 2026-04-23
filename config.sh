@@ -29,9 +29,9 @@ export SLURM_FINE_TIME="72:00:00"
 
 # BP-TZVPD-OPT: geometry optimization with BP86 + RI + TZVPD + COSMO
 # Iterative jobex — needs more time/memory than single-point
-export SLURM_OPT_CPUS=16
-export SLURM_OPT_MEM="120000M"
-export SLURM_OPT_TIME="168:00:00"
+export SLURM_OPT_CPUS=72
+export SLURM_OPT_MEM="240000M"
+export SLURM_OPT_TIME="72:00:00"
 
 # --- Repo self-location -------------------------------------------------------
 if [[ -z "${REPO_ROOT:-}" ]]; then
