@@ -56,26 +56,42 @@ def check_obabel():
 def protonate_pdb(input_pdb, output_pdb, pH):
     """Run OpenBabel to add hydrogens at a given pH.
 
-    Uses obabel -ipdb -opdb -h -p <pH>.  The -p flag adds hydrogens
+    Uses obabel -ipdb -opdb -O output -p <pH>.  The -p flag adds hydrogens
     considering pH-dependent protonation states of common functional groups.
+
+    OpenBabel needs the -O flag for the output path (not positional).
+    We also add --connect-the-dots and --perceive to help OpenBabel
+    reconstruct bonding from multi-residue HETATM PDB files.
     """
     cmd = [
         "obabel",
         "-ipdb", str(input_pdb),
-        "-opdb", str(output_pdb),
+        "-opdb",
+        "-O", str(output_pdb),
         "-p", str(pH),
     ]
     print(f"  Running: {' '.join(cmd)}")
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+
+    print(f"  obabel stderr: {result.stderr.strip()}")
 
     if result.returncode != 0:
         print(f"ERROR: obabel failed (exit {result.returncode})", file=sys.stderr)
         print(result.stderr, file=sys.stderr)
         sys.exit(1)
 
-    # obabel prints "1 molecule converted" to stderr on success
-    if "1 molecule converted" not in result.stderr:
-        print(f"WARNING: obabel output unexpected: {result.stderr.strip()}", file=sys.stderr)
+    # Check the output file was actually created
+    if not Path(output_pdb).exists():
+        print(f"ERROR: obabel did not create {output_pdb}", file=sys.stderr)
+        print(f"       stderr: {result.stderr.strip()}", file=sys.stderr)
+        print(f"       This usually means OpenBabel could not parse the PDB as", file=sys.stderr)
+        print(f"       a single molecule. Check the CONECT records in the cleaned PDB.", file=sys.stderr)
+        sys.exit(1)
+
+    if "0 molecules converted" in result.stderr:
+        print(f"ERROR: obabel converted 0 molecules", file=sys.stderr)
+        print(f"       The cleaned PDB may have bonding issues.", file=sys.stderr)
+        sys.exit(1)
 
     return output_pdb
 

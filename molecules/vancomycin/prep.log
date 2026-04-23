@@ -1,0 +1,41 @@
+============================================================
+prepare_molecule: vancomycin  pH=2.6
+============================================================
+[0/4] OpenBabel: Open Babel 3.1.0 -- May  8 2020 -- 15:48:11
+
+[1/4] Cleaning PDB: molecules/vancomycin/1SHO.pdb
+      Keeping chains: A,C
+      Kept atoms:          101
+      Removed waters:      112
+      Removed ions:        2
+      Removed other chain: 102
+      Removed alt conformer: 1
+      CONECT records kept: 94 / 196
+      Output: /Users/youcef/Downloads/turbomole-cosmo-v2/molecules/vancomycin/vancomycin_clean.pdb
+      Formula (cleaned): C66Cl2N9O24
+      Heavy atoms: 101, Total: 101
+
+[2/4] Protonating at pH 2.6 with OpenBabel
+      Formula (protonated): C66H77Cl2N9O24
+      Total atoms: 178  (added 77 hydrogens)
+
+[3/4] Determining molecular charge
+      Total formal charge: +2
+      Written: /Users/youcef/Downloads/turbomole-cosmo-v2/molecules/vancomycin/charge.txt
+
+[4/4] Writing XYZ
+      178 atoms -> /Users/youcef/Downloads/turbomole-cosmo-v2/molecules/vancomycin/vancomycin.xyz
+
+============================================================
+DONE: vancomycin
+  Formula:  C66H77Cl2N9O24
+  Atoms:    178
+  Charge:   +2
+  pH:       2.6
+  XYZ:      /Users/youcef/Downloads/turbomole-cosmo-v2/molecules/vancomycin/vancomycin.xyz
+  Charge:   /Users/youcef/Downloads/turbomole-cosmo-v2/molecules/vancomycin/charge.txt
+============================================================
+
+Next step:
+  scripts/prep_cosmo.sh vancomycin BP-TZVPD-FINE
+  (charge will be read automatically from /Users/youcef/Downloads/turbomole-cosmo-v2/molecules/vancomycin/charge.txt)
