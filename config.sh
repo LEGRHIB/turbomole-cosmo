@@ -28,9 +28,10 @@ export SLURM_FINE_MEM="120000M"
 export SLURM_FINE_TIME="72:00:00"
 
 # BP-TZVPD-OPT: geometry optimization with BP86 + RI + TZVPD + COSMO
-# Iterative jobex — needs more time/memory than single-point
-export SLURM_OPT_CPUS=72
-export SLURM_OPT_MEM="240000M"
+# These are defaults for medium molecules (~200 atoms)
+# Override per-molecule with: submit_cosmo.sh mol protocol --partition bigmem --cpus 72 --mem 2000000M
+export SLURM_OPT_CPUS=16
+export SLURM_OPT_MEM="120000M"
 export SLURM_OPT_TIME="72:00:00"
 
 # --- Repo self-location -------------------------------------------------------

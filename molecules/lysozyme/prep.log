@@ -1,0 +1,41 @@
+============================================================
+prepare_molecule: lysozyme  pH=4.5
+============================================================
+[0/4] OpenBabel: Open Babel 3.1.0 -- May  8 2020 -- 15:48:11
+
+[1/4] Cleaning PDB: molecules/lysozyme/2LYZ.pdb
+      Keeping all chains
+      Kept atoms:          1001
+      Removed waters:      101
+      Removed ions:        0
+      Removed other chain: 0
+      Removed alt conformer: 0
+      CONECT records kept: 8 / 8
+      Output: /Users/youcef/Downloads/turbomole-cosmo-v2/molecules/lysozyme/lysozyme_clean.pdb
+      Formula (cleaned): C613N193O185S10
+      Heavy atoms: 1001, Total: 1001
+
+[2/4] Protonating at pH 4.5 with OpenBabel
+      Formula (protonated): C613H943N193O185S10
+      Total atoms: 1944  (added 943 hydrogens)
+
+[3/4] Determining molecular charge
+      Total formal charge: +0
+      Written: /Users/youcef/Downloads/turbomole-cosmo-v2/molecules/lysozyme/charge.txt
+
+[4/4] Writing XYZ
+      1944 atoms -> /Users/youcef/Downloads/turbomole-cosmo-v2/molecules/lysozyme/lysozyme.xyz
+
+============================================================
+DONE: lysozyme
+  Formula:  C613H943N193O185S10
+  Atoms:    1944
+  Charge:   +0
+  pH:       4.5
+  XYZ:      /Users/youcef/Downloads/turbomole-cosmo-v2/molecules/lysozyme/lysozyme.xyz
+  Charge:   /Users/youcef/Downloads/turbomole-cosmo-v2/molecules/lysozyme/charge.txt
+============================================================
+
+Next step:
+  scripts/prep_cosmo.sh lysozyme BP-TZVPD-FINE
+  (charge will be read automatically from /Users/youcef/Downloads/turbomole-cosmo-v2/molecules/lysozyme/charge.txt)
