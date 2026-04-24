@@ -34,6 +34,12 @@ export SLURM_OPT_CPUS=16
 export SLURM_OPT_MEM="120000M"
 export SLURM_OPT_TIME="72:00:00"
 
+# Bigmem defaults: used by --bigmem shortcut in full_pipeline.sh / prep_cosmo.sh
+# For large proteins (>500 atoms) that need bigmem partition for both prep and SCF
+export SLURM_BIGMEM_CPUS=72
+export SLURM_BIGMEM_MEM="2000000M"
+export SLURM_BIGMEM_TIME="72:00:00"
+
 # --- Repo self-location -------------------------------------------------------
 if [[ -z "${REPO_ROOT:-}" ]]; then
   export REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

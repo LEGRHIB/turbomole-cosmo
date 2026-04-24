@@ -12,6 +12,12 @@
 #   --protocol NAME       TURBOMOLE protocol (default: BP-TZVPD-OPT)
 #   --prep-only           Stop after prepare_molecule.py (don't run TURBOMOLE prep)
 #   --no-submit           Run prep_cosmo.sh but don't submit to SLURM
+#   --slurm               Submit prep as a SLURM job (for large molecules)
+#   --bigmem              Shortcut: --slurm --partition bigmem --cpus 72 --mem 2000000M
+#   --partition NAME      Override SLURM partition
+#   --cpus N              Override CPU count
+#   --mem SIZE            Override memory (e.g. 2000000M)
+#   --time HH:MM:SS       Override wall time
 #
 # Examples:
 #   # Vancomycin at pH 2.6, chains A+C, full geometry optimization
@@ -19,6 +25,9 @@
 #
 #   # Bradykinin at pH 7.4, all chains, single-point only
 #   scripts/full_pipeline.sh molecules/bradykinin/bradykinin.pdb bradykinin 7.4 --protocol BP-TZVPD-FINE
+#
+#   # Large protein on bigmem (prep on compute node, verify, then submit SCF manually)
+#   scripts/full_pipeline.sh molecules/lysozyme/2LYZ.pdb lysozyme 4.5 --bigmem
 #
 #   # Just prepare XYZ locally (no HPC needed)
 #   scripts/full_pipeline.sh input.pdb mymolecule 7.4 --prep-only
@@ -28,6 +37,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$REPO_ROOT/config.sh"
 
 # --- Parse arguments ----------------------------------------------------------
 INPUT_PDB=""
@@ -37,6 +47,11 @@ CHAINS=""
 PROTOCOL="BP-TZVPD-OPT"
 PREP_ONLY=false
 NO_SUBMIT=false
+USE_SLURM=false
+OVR_PARTITION=""
+OVR_CPUS=""
+OVR_MEM=""
+OVR_TIME=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -44,8 +59,20 @@ while [[ $# -gt 0 ]]; do
     --protocol)  PROTOCOL="$2"; shift 2 ;;
     --prep-only) PREP_ONLY=true; shift ;;
     --no-submit) NO_SUBMIT=true; shift ;;
+    --slurm)     USE_SLURM=true; shift ;;
+    --bigmem)
+      USE_SLURM=true
+      OVR_PARTITION="${OVR_PARTITION:-bigmem}"
+      OVR_CPUS="${OVR_CPUS:-${SLURM_BIGMEM_CPUS:-72}}"
+      OVR_MEM="${OVR_MEM:-${SLURM_BIGMEM_MEM:-2000000M}}"
+      shift
+      ;;
+    --partition)  OVR_PARTITION="$2"; shift 2 ;;
+    --cpus)       OVR_CPUS="$2"; shift 2 ;;
+    --mem)        OVR_MEM="$2"; shift 2 ;;
+    --time)       OVR_TIME="$2"; shift 2 ;;
     --help|-h)
-      head -n 25 "$0" | grep '^#' | sed 's/^# \?//'
+      head -n 35 "$0" | grep '^#' | sed 's/^# \?//'
       exit 0
       ;;
     *)
@@ -65,9 +92,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$INPUT_PDB" || -z "$MOLECULE" || -z "$PH" ]]; then
-  echo "Usage: $0 <input.pdb> <molecule> <pH> [--chains A,C] [--protocol NAME]" >&2
+  echo "Usage: $0 <input.pdb> <molecule> <pH> [--chains A,C] [--protocol NAME] [--bigmem]" >&2
   echo "       $0 --help for full usage" >&2
   exit 2
+fi
+
+# --bigmem or --slurm implies --no-submit (manual verification between prep and SCF)
+if $USE_SLURM; then
+  NO_SUBMIT=true
 fi
 
 echo "================================================================"
@@ -79,7 +111,14 @@ echo "  pH:         $PH"
 echo "  Chains:     ${CHAINS:-all}"
 echo "  Protocol:   $PROTOCOL"
 echo "  Prep only:  $PREP_ONLY"
+echo "  SLURM prep: $USE_SLURM"
 echo "  No submit:  $NO_SUBMIT"
+if [[ -n "$OVR_PARTITION" || -n "$OVR_CPUS" || -n "$OVR_MEM" || -n "$OVR_TIME" ]]; then
+echo "  Partition:  ${OVR_PARTITION:-default}"
+echo "  CPUs:       ${OVR_CPUS:-default}"
+echo "  Memory:     ${OVR_MEM:-default}"
+echo "  Wall time:  ${OVR_TIME:-default}"
+fi
 echo "================================================================"
 echo
 
@@ -128,16 +167,49 @@ fi
 echo ">>> STEP 2: TURBOMOLE prep (x2t + define + cosmoprep)"
 echo "---"
 
-"$SCRIPT_DIR/prep_cosmo.sh" "$MOLECULE" "$PROTOCOL"
+# Build prep_cosmo.sh arguments
+PREP_CMD_ARGS=("$MOLECULE" "$PROTOCOL")
+if $USE_SLURM; then
+  PREP_CMD_ARGS+=(--slurm)
+fi
+[[ -n "$OVR_PARTITION" ]] && PREP_CMD_ARGS+=(--partition "$OVR_PARTITION")
+[[ -n "$OVR_CPUS" ]]      && PREP_CMD_ARGS+=(--cpus "$OVR_CPUS")
+[[ -n "$OVR_MEM" ]]       && PREP_CMD_ARGS+=(--mem "$OVR_MEM")
+[[ -n "$OVR_TIME" ]]      && PREP_CMD_ARGS+=(--time "$OVR_TIME")
+
+"$SCRIPT_DIR/prep_cosmo.sh" "${PREP_CMD_ARGS[@]}"
 
 echo
+
+if $USE_SLURM; then
+  echo ">>> Prep submitted as SLURM job. Pipeline paused here."
+  echo
+  echo "    After the prep job finishes, verify and submit SCF manually:"
+  echo "    1. cat $MOL_DIR/prep_ok.stamp"
+  echo "    2. scripts/verify_cosmo.sh $MOLECULE   (optional quick check)"
+
+  # Build the submit command with the same resource overrides
+  SUBMIT_CMD="scripts/submit_cosmo.sh $MOLECULE $PROTOCOL"
+  [[ -n "$OVR_PARTITION" ]] && SUBMIT_CMD+=" --partition $OVR_PARTITION"
+  [[ -n "$OVR_CPUS" ]]      && SUBMIT_CMD+=" --cpus $OVR_CPUS"
+  [[ -n "$OVR_MEM" ]]       && SUBMIT_CMD+=" --mem $OVR_MEM"
+  [[ -n "$OVR_TIME" ]]      && SUBMIT_CMD+=" --time $OVR_TIME"
+  echo "    3. $SUBMIT_CMD"
+  exit 0
+fi
 
 if $NO_SUBMIT; then
   echo ">>> --no-submit specified. Stopping here."
   echo "    Prepared in: $MOL_DIR"
   echo
   echo "    To submit manually:"
-  echo "    scripts/submit_cosmo.sh $MOLECULE $PROTOCOL"
+
+  SUBMIT_CMD="scripts/submit_cosmo.sh $MOLECULE $PROTOCOL"
+  [[ -n "$OVR_PARTITION" ]] && SUBMIT_CMD+=" --partition $OVR_PARTITION"
+  [[ -n "$OVR_CPUS" ]]      && SUBMIT_CMD+=" --cpus $OVR_CPUS"
+  [[ -n "$OVR_MEM" ]]       && SUBMIT_CMD+=" --mem $OVR_MEM"
+  [[ -n "$OVR_TIME" ]]      && SUBMIT_CMD+=" --time $OVR_TIME"
+  echo "    $SUBMIT_CMD"
   exit 0
 fi
 
@@ -145,7 +217,14 @@ fi
 echo ">>> STEP 3: Submitting SLURM job"
 echo "---"
 
-"$SCRIPT_DIR/submit_cosmo.sh" "$MOLECULE" "$PROTOCOL"
+# Build submit_cosmo.sh arguments
+SUBMIT_ARGS=("$MOLECULE" "$PROTOCOL")
+[[ -n "$OVR_PARTITION" ]] && SUBMIT_ARGS+=(--partition "$OVR_PARTITION")
+[[ -n "$OVR_CPUS" ]]      && SUBMIT_ARGS+=(--cpus "$OVR_CPUS")
+[[ -n "$OVR_MEM" ]]       && SUBMIT_ARGS+=(--mem "$OVR_MEM")
+[[ -n "$OVR_TIME" ]]      && SUBMIT_ARGS+=(--time "$OVR_TIME")
+
+"$SCRIPT_DIR/submit_cosmo.sh" "${SUBMIT_ARGS[@]}"
 
 echo
 echo "================================================================"
