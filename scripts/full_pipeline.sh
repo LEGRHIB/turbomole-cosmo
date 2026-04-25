@@ -185,8 +185,9 @@ if $USE_SLURM; then
   echo ">>> Prep submitted as SLURM job. Pipeline paused here."
   echo
   echo "    After the prep job finishes, verify and submit SCF manually:"
-  echo "    1. cat $MOL_DIR/prep_ok.stamp"
-  echo "    2. scripts/verify_cosmo.sh $MOLECULE   (optional quick check)"
+  WORK_DIR="$MOL_DIR/$PROTOCOL"
+  echo "    1. cat $WORK_DIR/prep_ok.stamp"
+  echo "    2. scripts/verify_cosmo.sh $MOLECULE $PROTOCOL   (optional quick check)"
 
   # Build the submit command with the same resource overrides
   SUBMIT_CMD="scripts/submit_cosmo.sh $MOLECULE $PROTOCOL"
@@ -200,7 +201,7 @@ fi
 
 if $NO_SUBMIT; then
   echo ">>> --no-submit specified. Stopping here."
-  echo "    Prepared in: $MOL_DIR"
+  echo "    Prepared in: $MOL_DIR/$PROTOCOL"
   echo
   echo "    To submit manually:"
 
@@ -229,5 +230,5 @@ SUBMIT_ARGS=("$MOLECULE" "$PROTOCOL")
 echo
 echo "================================================================"
 echo "  Pipeline complete for $MOLECULE"
-echo "  After job finishes: scripts/verify_cosmo.sh $MOLECULE"
+echo "  After job finishes: scripts/verify_cosmo.sh $MOLECULE $PROTOCOL"
 echo "================================================================"

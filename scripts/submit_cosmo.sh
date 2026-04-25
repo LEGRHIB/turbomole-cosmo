@@ -1,6 +1,8 @@
 #!/bin/bash
 # submit_cosmo.sh — Render SLURM template and submit the SCF job.
 #
+# Looks for prepared files in molecules/<molecule>/<protocol>/.
+#
 # Usage:
 #   scripts/submit_cosmo.sh <molecule> [protocol] [options]
 #
@@ -11,8 +13,8 @@
 #   --time HH:MM:SS     Override wall time
 #
 # Examples:
-#   scripts/submit_cosmo.sh vancomycin BP-TZVPD-OPT
-#   scripts/submit_cosmo.sh lysozyme BP-TZVPD-OPT --partition bigmem --cpus 72 --mem 2000000M
+#   scripts/submit_cosmo.sh vancomycin BP-TZVPD-FINE
+#   scripts/submit_cosmo.sh lysozyme BP-TZVPD-FINE --partition bigmem --cpus 72 --mem 2000000M
 # -----------------------------------------------------------------------------
 
 set -euo pipefail
@@ -47,11 +49,12 @@ if [[ -z "$MOLECULE" ]]; then
 fi
 
 MOL_DIR="$REPO_ROOT/molecules/$MOLECULE"
+WORK_DIR="$MOL_DIR/$PROTOCOL"
 PROTO_DIR="$REPO_ROOT/protocols/$PROTOCOL"
 SLURM_TMPL="$PROTO_DIR/slurm.tmpl"
 
-if [[ ! -f "$MOL_DIR/control" ]]; then
-  echo "ERROR: $MOL_DIR/control not found." >&2
+if [[ ! -f "$WORK_DIR/control" ]]; then
+  echo "ERROR: $WORK_DIR/control not found." >&2
   echo "       Run prep_cosmo.sh first: scripts/prep_cosmo.sh $MOLECULE $PROTOCOL" >&2
   exit 2
 fi
@@ -90,7 +93,7 @@ esac
 [[ -n "$OVR_TIME" ]] && TIME="$OVR_TIME"
 [[ -n "$OVR_PARTITION" ]] && PARTITION="$OVR_PARTITION"
 
-SLURM_SCRIPT="$MOL_DIR/run_${MOLECULE}.slurm"
+SLURM_SCRIPT="$WORK_DIR/run_${MOLECULE}.slurm"
 
 sed \
   -e "s|__MOLECULE__|${MOLECULE}|g" \
@@ -100,16 +103,17 @@ sed \
   -e "s|__CPUS__|${CPUS}|g" \
   -e "s|__TIME__|${TIME}|g" \
   -e "s|__MEM__|${MEM}|g" \
-  -e "s|__INDIR__|${MOL_DIR}|g" \
+  -e "s|__INDIR__|${WORK_DIR}|g" \
   -e "s|__TURBOMOLE_ROOT__|${TURBOMOLE_ROOT}|g" \
   -e "s|__SYSNAME__|${TURBOMOLE_SYSNAME}|g" \
   "$SLURM_TMPL" > "$SLURM_SCRIPT"
 
 echo "=== submit_cosmo ==="
-echo "  Molecule: $MOLECULE"
-echo "  Protocol: $PROTOCOL"
-echo "  SLURM   : $SLURM_SCRIPT"
-echo "  Cluster : $CLUSTER / $PARTITION / $ACCOUNT"
+echo "  Molecule:  $MOLECULE"
+echo "  Protocol:  $PROTOCOL"
+echo "  Workdir:   $WORK_DIR"
+echo "  SLURM:     $SLURM_SCRIPT"
+echo "  Cluster:   $CLUSTER / $PARTITION / $ACCOUNT"
 echo "  Resources: ${CPUS} CPUs, ${MEM} mem, ${TIME} wall"
 echo
 
@@ -120,4 +124,4 @@ echo "$JOB_OUTPUT"
 echo
 echo "Job ID: $JOB_ID"
 echo "Monitor: squeue --clusters=$CLUSTER -j $JOB_ID"
-echo "After completion: scripts/verify_cosmo.sh $MOLECULE"
+echo "After completion: scripts/verify_cosmo.sh $MOLECULE $PROTOCOL"

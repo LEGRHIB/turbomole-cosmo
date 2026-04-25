@@ -4,6 +4,9 @@
 # By default runs on the login node (small molecules).
 # With --slurm, submits as a SLURM job (large molecules needing bigmem).
 #
+# Output goes into molecules/<molecule>/<protocol>/ so multiple protocols
+# can coexist without overwriting each other.
+#
 # Usage:
 #   scripts/prep_cosmo.sh <molecule> [protocol] [options]
 #
@@ -15,12 +18,9 @@
 #   --time HH:MM:SS      Wall time for SLURM prep job
 #
 # Examples:
-#   # Small molecule — run on login node (unchanged behavior)
 #   scripts/prep_cosmo.sh bradykinin def2-SVP
-#   scripts/prep_cosmo.sh vancomycin BP-TZVPD-OPT
-#
-#   # Large protein — submit prep to bigmem partition
-#   scripts/prep_cosmo.sh lysozyme BP-TZVPD-OPT --slurm --partition bigmem --cpus 72 --mem 2000000M
+#   scripts/prep_cosmo.sh vancomycin BP-TZVPD-FINE
+#   scripts/prep_cosmo.sh lysozyme BP-TZVPD-FINE --slurm --partition bigmem --cpus 72 --mem 2000000M
 # -----------------------------------------------------------------------------
 
 set -euo pipefail
@@ -39,11 +39,10 @@ OVR_CPUS=""
 OVR_MEM=""
 OVR_TIME=""
 
-# First two positional args are molecule and protocol
 POSITIONAL=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --slurm)     USE_SLURM=true; shift ;;
+    --slurm)      USE_SLURM=true; shift ;;
     --partition)  OVR_PARTITION="$2"; shift 2 ;;
     --cpus)       OVR_CPUS="$2"; shift 2 ;;
     --mem)        OVR_MEM="$2"; shift 2 ;;
@@ -68,7 +67,8 @@ fi
 
 MOL_DIR="$REPO_ROOT/molecules/$MOLECULE"
 PROTO_DIR="$REPO_ROOT/protocols/$PROTOCOL"
-LOG_DIR="$MOL_DIR/logs"
+WORK_DIR="$MOL_DIR/$PROTOCOL"
+LOG_DIR="$WORK_DIR/logs"
 
 # --- Pre-flight checks --------------------------------------------------------
 if [[ ! -d "$MOL_DIR" ]]; then
@@ -93,6 +93,7 @@ for f in define.in cosmoprep.in; do
   fi
 done
 
+mkdir -p "$WORK_DIR"
 mkdir -p "$LOG_DIR"
 
 # --- Read molecular charge ----------------------------------------------------
@@ -119,13 +120,12 @@ fi
 # SLURM mode: generate a prep job script and submit it
 # ==============================================================================
 if $USE_SLURM; then
-  # Resolve SLURM resources
   PREP_CPUS="${OVR_CPUS:-${SLURM_BIGMEM_CPUS:-72}}"
   PREP_MEM="${OVR_MEM:-${SLURM_BIGMEM_MEM:-2000000M}}"
   PREP_TIME="${OVR_TIME:-${SLURM_BIGMEM_TIME:-72:00:00}}"
   PREP_PARTITION="${OVR_PARTITION:-${PARTITION}}"
 
-  SLURM_SCRIPT="$MOL_DIR/prep_${MOLECULE}.slurm"
+  SLURM_SCRIPT="$WORK_DIR/prep_${MOLECULE}.slurm"
 
   cat > "$SLURM_SCRIPT" <<SLURM_EOF
 #!/bin/bash -l
@@ -137,7 +137,7 @@ if $USE_SLURM; then
 #SBATCH --cpus-per-task=${PREP_CPUS}
 #SBATCH --time=${PREP_TIME}
 #SBATCH --mem=${PREP_MEM}
-#SBATCH --job-name=${MOLECULE}-prep
+#SBATCH --job-name=${MOLECULE}-${PROTOCOL}-prep
 #SBATCH --output=prep-cosmo.out
 #SBATCH --error=prep-cosmo.err
 
@@ -146,12 +146,13 @@ set -euo pipefail
 # --- Paths ---
 MOL_DIR="${MOL_DIR}"
 PROTO_DIR="${PROTO_DIR}"
+WORK_DIR="${WORK_DIR}"
 LOG_DIR="${LOG_DIR}"
 MOLECULE="${MOLECULE}"
 PROTOCOL="${PROTOCOL}"
 CHARGE="${CHARGE}"
 
-cd "\$MOL_DIR"
+cd "\$WORK_DIR"
 
 # Remove any stale stamp from previous attempts
 rm -f prep_ok.stamp
@@ -166,6 +167,7 @@ echo "=== prep_cosmo (SLURM job \$SLURM_JOB_ID) ==="
 echo "  Molecule: \$MOLECULE"
 echo "  Protocol: \$PROTOCOL"
 echo "  Charge:   \$CHARGE"
+echo "  Workdir:  \$WORK_DIR"
 echo "  Node:     \$(hostname)"
 echo "  CPUs:     \$SLURM_CPUS_PER_TASK"
 echo "  Memory:   ${PREP_MEM}"
@@ -173,7 +175,7 @@ echo
 
 # --- Step 1: xyz -> coord ---
 echo "[1/4] x2t: \$MOLECULE.xyz -> coord"
-x2t "\$MOLECULE.xyz" > coord
+x2t "\$MOL_DIR/\$MOLECULE.xyz" > coord
 if ! head -n 1 coord | grep -q '^\\\$coord'; then
   echo "ERROR: coord file does not start with \\\$coord — x2t failed?" >&2
   head coord >&2
@@ -252,6 +254,7 @@ SLURM_EOF
   echo "  Molecule:  $MOLECULE"
   echo "  Protocol:  $PROTOCOL"
   echo "  Charge:    $CHARGE"
+  echo "  Workdir:   $WORK_DIR"
   echo "  SLURM:     $SLURM_SCRIPT"
   echo "  Cluster:   $CLUSTER / $PREP_PARTITION / $ACCOUNT"
   echo "  Resources: ${PREP_CPUS} CPUs, ${PREP_MEM} mem, ${PREP_TIME} wall"
@@ -266,9 +269,9 @@ SLURM_EOF
   echo "Monitor:     squeue --clusters=$CLUSTER -j $JOB_ID"
   echo
   echo "After job completes, verify prep succeeded:"
-  echo "  1. Check stamp:  cat $MOL_DIR/prep_ok.stamp"
+  echo "  1. Check stamp:  cat $WORK_DIR/prep_ok.stamp"
   echo "  2. Check logs:   tail $LOG_DIR/define.log $LOG_DIR/cosmoprep.log"
-  echo "  3. Check control: grep '\$cosmo_out' $MOL_DIR/control"
+  echo "  3. Check control: grep '\$cosmo_out' $WORK_DIR/control"
   echo
   echo "Then submit the SCF/optimization job:"
   echo "  scripts/submit_cosmo.sh $MOLECULE $PROTOCOL --partition $PREP_PARTITION --cpus $PREP_CPUS --mem $PREP_MEM"
@@ -280,7 +283,6 @@ fi
 # Local mode (login node): original behavior
 # ==============================================================================
 
-# --- Load TURBOMOLE -----------------------------------------------------------
 if [[ ! -f "$TURBOMOLE_ROOT/vars" ]]; then
   echo "ERROR: TURBOMOLE vars not found at $TURBOMOLE_ROOT/vars" >&2
   exit 3
@@ -294,14 +296,14 @@ echo "=== prep_cosmo ==="
 echo "  Molecule: $MOLECULE"
 echo "  Protocol: $PROTOCOL"
 echo "  Charge:   $CHARGE"
-echo "  Workdir : $MOL_DIR"
+echo "  Workdir : $WORK_DIR"
 echo
 
-cd "$MOL_DIR"
+cd "$WORK_DIR"
 
 # --- Step 1: xyz -> coord -----------------------------------------------------
 echo "[1/4] x2t: $MOLECULE.xyz -> coord"
-x2t "$MOLECULE.xyz" > coord
+x2t "$MOL_DIR/$MOLECULE.xyz" > coord
 if ! head -n 1 coord | grep -q '^\$coord'; then
   echo "ERROR: coord file does not start with \$coord — x2t failed?" >&2
   head coord >&2
@@ -361,7 +363,7 @@ if [[ "$PROTOCOL" == BP-TZVPD-* ]]; then
   done
 fi
 
-# Write prep_ok.stamp for consistency (useful when full_pipeline checks it)
+# Write prep_ok.stamp for consistency
 echo "PREP_OK" > prep_ok.stamp
 echo "$(date -Iseconds)" >> prep_ok.stamp
 echo "local protocol=$PROTOCOL charge=$CHARGE" >> prep_ok.stamp

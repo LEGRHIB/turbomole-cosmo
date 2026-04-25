@@ -37,7 +37,7 @@ SKIPPED=0
 for MOL_DIR in "$REPO_ROOT"/molecules/*/; do
   MOLECULE=$(basename "$MOL_DIR")
   XYZ="$MOL_DIR/$MOLECULE.xyz"
-  COSMO="$MOL_DIR/$MOLECULE.cosmo"
+  COSMO="$MOL_DIR/$PROTOCOL/$MOLECULE.cosmo"
 
   if [[ ! -f "$XYZ" ]]; then
     continue
