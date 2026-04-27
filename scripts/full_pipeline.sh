@@ -91,8 +91,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$INPUT_PDB" || -z "$MOLECULE" || -z "$PH" ]]; then
-  echo "Usage: $0 <input.pdb> <molecule> <pH> [--chains A,C] [--protocol NAME] [--bigmem]" >&2
+if [[ -z "$INPUT_PDB" || -z "$MOLECULE" ]]; then
+  echo "Usage: $0 <input> <molecule> [pH] [--chains A,C] [--protocol NAME] [--bigmem]" >&2
+  echo "       pH is required for PDB input, optional for SDF input." >&2
   echo "       $0 --help for full usage" >&2
   exit 2
 fi
@@ -105,9 +106,9 @@ fi
 echo "================================================================"
 echo "  TURBOMOLE COSMO Full Pipeline"
 echo "================================================================"
-echo "  Input PDB:  $INPUT_PDB"
+echo "  Input:      $INPUT_PDB"
 echo "  Molecule:   $MOLECULE"
-echo "  pH:         $PH"
+echo "  pH:         ${PH:-not set (SDF mode)}"
 echo "  Chains:     ${CHAINS:-all}"
 echo "  Protocol:   $PROTOCOL"
 echo "  Prep only:  $PREP_ONLY"
@@ -126,7 +127,8 @@ echo
 echo ">>> STEP 1: Preparing molecule"
 echo "---"
 
-PREP_ARGS=("$INPUT_PDB" "$MOLECULE" "$PH")
+PREP_ARGS=("$INPUT_PDB" "$MOLECULE")
+[[ -n "$PH" ]] && PREP_ARGS+=("$PH")
 if [[ -n "$CHAINS" ]]; then
   PREP_ARGS+=(--chains "$CHAINS")
 fi
