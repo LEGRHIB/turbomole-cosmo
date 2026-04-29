@@ -13,6 +13,7 @@
 #   --prep-only           Stop after prepare_molecule.py (don't run TURBOMOLE prep)
 #   --no-submit           Run prep_cosmo.sh but don't submit to SLURM
 #   --slurm               Submit prep as a SLURM job (for large molecules)
+#   --xtb-preopt          Run GFN2-xTB pre-optimization before DFT (recommended for SDF input)
 #   --bigmem              Shortcut: --slurm --partition bigmem --cpus 72 --mem 2000000M
 #   --partition NAME      Override SLURM partition
 #   --cpus N              Override CPU count
@@ -28,6 +29,9 @@
 #
 #   # Large protein on bigmem (prep on compute node, verify, then submit SCF manually)
 #   scripts/full_pipeline.sh molecules/lysozyme/2LYZ.pdb lysozyme 4.5 --bigmem
+#
+#   # 2D SDF with xTB pre-optimization (recommended)
+#   scripts/full_pipeline.sh molecules/vancomycin_2d/vancomycin_2d.sdf vancomycin_2d --xtb-preopt
 #
 #   # Just prepare XYZ locally (no HPC needed)
 #   scripts/full_pipeline.sh input.pdb mymolecule 7.4 --prep-only
@@ -48,6 +52,7 @@ PROTOCOL="$DEFAULT_PROTOCOL"
 PREP_ONLY=false
 NO_SUBMIT=false
 USE_SLURM=false
+XTB_PREOPT=false
 OVR_PARTITION=""
 OVR_CPUS=""
 OVR_MEM=""
@@ -57,9 +62,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --chains)    CHAINS="$2"; shift 2 ;;
     --protocol)  PROTOCOL="$2"; shift 2 ;;
-    --prep-only) PREP_ONLY=true; shift ;;
-    --no-submit) NO_SUBMIT=true; shift ;;
-    --slurm)     USE_SLURM=true; shift ;;
+    --prep-only)    PREP_ONLY=true; shift ;;
+    --no-submit)    NO_SUBMIT=true; shift ;;
+    --xtb-preopt)   XTB_PREOPT=true; shift ;;
+    --slurm)        USE_SLURM=true; shift ;;
     --bigmem)
       USE_SLURM=true
       OVR_PARTITION="${OVR_PARTITION:-bigmem}"
@@ -111,6 +117,7 @@ echo "  Molecule:   $MOLECULE"
 echo "  pH:         ${PH:-not set (SDF mode)}"
 echo "  Chains:     ${CHAINS:-all}"
 echo "  Protocol:   $PROTOCOL"
+echo "  xTB preopt: $XTB_PREOPT"
 echo "  Prep only:  $PREP_ONLY"
 echo "  SLURM prep: $USE_SLURM"
 echo "  No submit:  $NO_SUBMIT"
@@ -163,6 +170,34 @@ if $PREP_ONLY; then
   echo "    scripts/prep_cosmo.sh $MOLECULE $PROTOCOL"
   echo "    scripts/submit_cosmo.sh $MOLECULE $PROTOCOL"
   exit 0
+fi
+
+# --- Step 1b (optional): GFN-xTB pre-optimization ----------------------------
+if $XTB_PREOPT; then
+  echo ">>> STEP 1b: GFN2-xTB pre-optimization"
+  echo "---"
+
+  XTB_ARGS=("$MOLECULE")
+  if $USE_SLURM; then
+    XTB_ARGS+=(--slurm)
+    [[ -n "$OVR_PARTITION" ]] && XTB_ARGS+=(--partition "$OVR_PARTITION")
+    [[ -n "$OVR_CPUS" ]]      && XTB_ARGS+=(--cpus "$OVR_CPUS")
+    [[ -n "$OVR_MEM" ]]       && XTB_ARGS+=(--mem "$OVR_MEM")
+  fi
+
+  "$SCRIPT_DIR/xtb_preopt.sh" "${XTB_ARGS[@]}"
+
+  if $USE_SLURM; then
+    echo
+    echo ">>> xTB pre-optimization submitted as SLURM job. Pipeline paused."
+    echo "    After xTB job finishes, re-run without --xtb-preopt to continue DFT:"
+    echo "    scripts/full_pipeline.sh $INPUT_PDB $MOLECULE ${PH:-} --protocol $PROTOCOL"
+    exit 0
+  fi
+
+  echo
+  echo "  xTB pre-optimization done. Updated XYZ: $MOL_DIR/$MOLECULE.xyz"
+  echo
 fi
 
 # --- Step 2: TURBOMOLE prep (x2t + define + cosmoprep) ------------------------
