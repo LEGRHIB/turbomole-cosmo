@@ -138,8 +138,8 @@ if $USE_SLURM; then
 #SBATCH --time=${PREP_TIME}
 #SBATCH --mem=${PREP_MEM}
 #SBATCH --job-name=${MOLECULE}-${PROTOCOL}-prep
-#SBATCH --output=prep-cosmo.out
-#SBATCH --error=prep-cosmo.err
+#SBATCH --output=${WORK_DIR}/prep-cosmo.out
+#SBATCH --error=${WORK_DIR}/prep-cosmo.err
 
 set -euo pipefail
 

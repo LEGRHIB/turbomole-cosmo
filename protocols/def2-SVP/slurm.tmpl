@@ -8,8 +8,8 @@
 #SBATCH --time=__TIME__
 #SBATCH --mem=__MEM__
 #SBATCH --job-name=__MOLECULE__-cosmo-svp
-#SBATCH --output=scf-cosmo.out
-#SBATCH --error=scf-cosmo.err
+#SBATCH --output=__INDIR__/scf-cosmo.out
+#SBATCH --error=__INDIR__/scf-cosmo.err
 
 set -euo pipefail
 
