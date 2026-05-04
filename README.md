@@ -237,6 +237,24 @@ extracting the .cosmo file, giving more accurate sigma profiles than a
 single-point on a crystal or force-field geometry. Allocated 168h (7 days)
 wall time for large molecules.
 
+### Auto-tuned SCF for BP-TZVPD-*
+
+`prep_cosmo.sh` automatically applies a tuned SCF block to `control` after
+`define`+`cosmoprep` for any `BP-TZVPD-*` protocol:
+
+```
+$scfiterlimit      300
+$scfdamp   start=0.700  step=0.050  min=0.050
+$scforbitalshift  automatic=.3
+```
+
+These values handle difficult SCF convergence on large molecules (heavy
+damping for a rough initial guess, generous iteration budget, fixed orbital
+shift). The tuning is applied by `scripts/_tune_scf.sh`, which is called
+from both local-mode and SLURM-mode prep. Hand-editing `control` after prep
+is no longer needed. For `def2-SVP` and other protocols, no tuning is
+applied (defaults are fine for the smaller basis).
+
 ## How the answer files work
 
 `define` and `cosmoprep` are interactive tools. Instead of typing answers
@@ -284,9 +302,12 @@ to see which prompt got the wrong input.
 Run `chmod +x scripts/*.sh` after every `scp`.
 
 **SCF doesn't converge:**
-Try increasing `--mem` in config.sh, or check if the starting geometry
-needs improvement. For large molecules (>150 atoms) at TZVPD level,
-120 GB may not be enough — try 200 GB on a bigmem node.
+For BP-TZVPD-* protocols, the tuned SCF block is already applied by
+`prep_cosmo.sh` (see "Auto-tuned SCF for BP-TZVPD-*" above). If SCF still
+fails to converge: try increasing `--mem` in config.sh, or check if the
+starting geometry needs improvement (consider `xtb_preopt.sh` for 2D SDF
+inputs). For large molecules (>150 atoms) at TZVPD level, 120 GB may not
+be enough — try 200 GB on a bigmem node.
 
 **Wrong atom count after prepare_molecule.py:**
 Check `prep.log` for the cleaning report. Common issues: wrong `--chains`

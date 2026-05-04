@@ -238,6 +238,10 @@ if [[ "\$PROTOCOL" == BP-TZVPD-* ]]; then
   done
 fi
 
+# --- Step 4b: Apply protocol-specific SCF tuning ---
+echo "[4b/4] applying protocol SCF tuning"
+bash "${REPO_ROOT}/scripts/_tune_scf.sh" "\$PROTOCOL"
+
 # --- Success stamp ---
 echo "PREP_OK" > prep_ok.stamp
 echo "\$(date -Iseconds)" >> prep_ok.stamp
@@ -362,6 +366,10 @@ if [[ "$PROTOCOL" == BP-TZVPD-* ]]; then
     fi
   done
 fi
+
+# --- Step 4b: Apply protocol-specific SCF tuning -----------------------------
+echo "[4b/4] applying protocol SCF tuning"
+bash "$REPO_ROOT/scripts/_tune_scf.sh" "$PROTOCOL"
 
 # Write prep_ok.stamp for consistency
 echo "PREP_OK" > prep_ok.stamp
