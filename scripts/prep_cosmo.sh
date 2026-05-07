@@ -188,7 +188,7 @@ echo "[2/4] define < \$PROTOCOL/define.in (charge=\$CHARGE)"
 rm -f control basis mos auxbasis
 DEFINE_TMP="\$(mktemp)"
 sed "s/__CHARGE__/\$CHARGE/g" "\$PROTO_DIR/define.in" > "\$DEFINE_TMP"
-if ! define < "\$DEFINE_TMP" > "\$LOG_DIR/define.log" 2>&1; then
+if ! cat "\$DEFINE_TMP" | define > "\$LOG_DIR/define.log" 2>&1; then
   echo "ERROR: define exited non-zero. See \$LOG_DIR/define.log" >&2
   tail -n 30 "\$LOG_DIR/define.log" >&2
   rm -f "\$DEFINE_TMP"
@@ -320,7 +320,7 @@ echo "[2/4] define < $PROTOCOL/define.in (charge=$CHARGE)"
 rm -f control basis mos auxbasis
 DEFINE_TMP="$(mktemp)"
 sed "s/__CHARGE__/$CHARGE/g" "$PROTO_DIR/define.in" > "$DEFINE_TMP"
-if ! define < "$DEFINE_TMP" > "$LOG_DIR/define.log" 2>&1; then
+if ! cat "$DEFINE_TMP" | define > "$LOG_DIR/define.log" 2>&1; then
   echo "ERROR: define exited non-zero. See $LOG_DIR/define.log" >&2
   tail -n 30 "$LOG_DIR/define.log" >&2
   exit 5
