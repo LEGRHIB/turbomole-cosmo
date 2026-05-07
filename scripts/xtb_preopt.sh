@@ -238,6 +238,7 @@ if $USE_SLURM; then
 
 set -euo pipefail
 
+module load xtb/6.7.1-gfbf-2024a
 source ${TURBOMOLE_ROOT}/vars
 export PARA_ARCH=SMP
 export TURBOMOLE_SYSNAME=${TURBOMOLE_SYSNAME}
