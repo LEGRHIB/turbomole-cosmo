@@ -97,7 +97,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     # Parse: label sol1 sol2 x1 x2 (whitespace-separated)
     read -r label sol1 sol2 x1 x2 _ <<< "$line"
     [[ -z "$label" ]] && continue
-    ((i++))
+    i=$((i + 1))
 
     MIX_INP="$WORK_DIR/mix-${label}.inp"
     sed \
@@ -116,10 +116,10 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     printf '  [%2d] %-30s %s/%s = %s/%s ... ' "$i" "$label" "$sol1" "$sol2" "$x1" "$x2"
     if ( cd "$WORK_DIR" && cosmotherm "$(basename "$MIX_INP")" ) >/dev/null 2>&1; then
         echo "ok"
-        ((ok++))
+        ok=$((ok + 1))
     else
         echo "FAIL (see $WORK_DIR/mix-${label}.out)"
-        ((fail++))
+        fail=$((fail + 1))
     fi
 done < "$PROTO_DIR/mixtures-binary.list"
 
