@@ -1,0 +1,44 @@
+# COSMObase BP-TZVPD-FINE pure-solvent panel for medicinal/process chemistry screening.
+# One solvent per line. Comment lines start with '#'. Blank lines ignored.
+# Names match COSMObase filenames (without _c0.cosmo suffix).
+#
+# Dropped (not in BP-TZVPD-FINE database): dichloromethane, mtbe,
+#   n-methylpyrrolidone, 1,2-propanediol.
+
+# --- Protic polar (9) ---
+h2o
+methanol
+ethanol
+propanol
+2-propanol
+1-butanol
+1-octanol
+glycol
+glycerol
+
+# --- Aprotic polar (6) ---
+dimethylsulfoxide
+dimethylformamide
+n,n-dimethylacetamide
+propanone
+acetonitrile
+butanone
+
+# --- Ether / Ester / Cyclic (6) ---
+thf
+dioxane
+ethylacetate
+isopropylacetate
+diethylether
+anisole
+
+# --- Nonpolar (5) ---
+hexane
+n-heptane
+cyclohexane
+toluene
+1,4-dimethylbenzene
+
+# --- Halogenated (2) ---
+chloroform
+1,2-dichloroethane

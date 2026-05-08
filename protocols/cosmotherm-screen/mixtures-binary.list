@@ -1,0 +1,19 @@
+# Binary solvent mixtures for COSMO-RS solubility screening.
+# Format (whitespace-separated):
+#   <label>  <solvent1>  <solvent2>  <x1>  <x2>
+# - label is used as filename suffix (no spaces, slashes, or weird chars)
+# - solvent1, solvent2 are COSMObase basenames (same as in solvents-pure.list)
+# - x1, x2 are mole fractions of solvent1 and solvent2; must sum to 1.0
+# Comment lines start with '#'.
+
+# label                          solvent1               solvent2               x1     x2
+water-ethanol-70-30              h2o                    ethanol                0.70   0.30
+water-ethanol-50-50              h2o                    ethanol                0.50   0.50
+water-ethanol-30-70              h2o                    ethanol                0.30   0.70
+water-methanol-50-50             h2o                    methanol               0.50   0.50
+water-acetonitrile-70-30         h2o                    acetonitrile           0.70   0.30
+water-acetonitrile-50-50         h2o                    acetonitrile           0.50   0.50
+water-dmso-90-10                 h2o                    dimethylsulfoxide      0.90   0.10
+water-dmso-70-30                 h2o                    dimethylsulfoxide      0.70   0.30
+hexane-etac-50-50                hexane                 ethylacetate           0.50   0.50
+methanol-chloroform-50-50        methanol               chloroform             0.50   0.50
