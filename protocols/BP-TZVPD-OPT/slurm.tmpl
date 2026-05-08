@@ -14,8 +14,14 @@
 set -euo pipefail
 
 INDIR=__INDIR__
-WORKDIR=$VSC_SCRATCH/__MOLECULE__-jobex-$SLURM_JOB_ID
+# Use node-local SSD (~960 GB on Wice bigmem / SR) for jobex intermediates.
+# Avoids VSC_SCRATCH quota (500 GB) and Lustre latency. Cleaned up
+# automatically when the job ends.
+LOCAL_SCRATCH="${TMPDIR:-/tmp}"
+WORKDIR="$LOCAL_SCRATCH/__MOLECULE__-jobex-$SLURM_JOB_ID"
 mkdir -p "$WORKDIR"
+echo "Workdir:    $WORKDIR (node-local SSD)"
+echo "Free space: $(df -h "$LOCAL_SCRATCH" | awk 'NR==2{print $4}')"
 cd "$WORKDIR"
 
 source __TURBOMOLE_ROOT__/vars
@@ -43,11 +49,13 @@ echo "Optimization converged:" $(grep -c 'CONVERGENCE' GEO_OPT_CONVERGED 2>/dev/
 
 # Copy all outputs back to input directory
 cp -a jobex.out energy gradient "$INDIR"/ 2>/dev/null || true
-cp -a coord control "$INDIR"/ 2>/dev/null || true
+cp -a coord control mos "$INDIR"/ 2>/dev/null || true
 cp -a *.cosmo *.ccf "$INDIR"/ 2>/dev/null || true
 cp -a GEO_OPT_CONVERGED "$INDIR"/ 2>/dev/null || true
-# Also save the final ridft output
-cp -a ridft.out "$INDIR"/ 2>/dev/null || true
+# Also save the final ridft output and statistics
+cp -a ridft.out statistics "$INDIR"/ 2>/dev/null || true
+# Save jobex history (small but useful for diagnosing convergence problems)
+cp -a job.last job.start "$INDIR"/ 2>/dev/null || true
 
 echo "Files copied back to $INDIR"
 ls -lah

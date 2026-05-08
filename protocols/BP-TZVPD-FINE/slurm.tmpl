@@ -14,8 +14,14 @@
 set -euo pipefail
 
 INDIR=__INDIR__
-WORKDIR=$VSC_SCRATCH/__MOLECULE__-ridft-$SLURM_JOB_ID
+# Use node-local SSD (~960 GB on Wice bigmem) for SCF intermediates.
+# Avoids VSC_SCRATCH quota (500 GB) and Lustre latency. Cleaned up
+# automatically when the job ends.
+LOCAL_SCRATCH="${TMPDIR:-/tmp}"
+WORKDIR="$LOCAL_SCRATCH/__MOLECULE__-ridft-$SLURM_JOB_ID"
 mkdir -p "$WORKDIR"
+echo "Workdir:    $WORKDIR (node-local SSD)"
+echo "Free space: $(df -h "$LOCAL_SCRATCH" | awk 'NR==2{print $4}')"
 cd "$WORKDIR"
 
 source __TURBOMOLE_ROOT__/vars
@@ -37,3 +43,5 @@ ls -lah
 
 cp -a ridft.out "$INDIR"/
 cp -a *.cosmo *.ccf "$INDIR"/ 2>/dev/null || true
+# Save converged orbitals + energy + final control for restarts/analysis
+cp -a mos energy statistics control "$INDIR"/ 2>/dev/null || true
