@@ -15,7 +15,6 @@ molecules/*/*.out
 molecules/*/*.err
 
 # Keep .xyz inputs and reference/ folders (tracked)
-!molecules/*/*.xyz
 !molecules/*/reference/
 
 # OS junk
