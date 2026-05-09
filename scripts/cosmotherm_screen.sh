@@ -69,6 +69,11 @@ grep -v '^[[:space:]]*#' "$PROTO_DIR/solvents-pure.list" \
 N_PURE=$(wc -l < "$SOLVENTS_LIST")
 echo "[1/2] pure-solvent screen ($N_PURE solvents)..."
 
+# Symlink the solute .cosmo into WORK_DIR so cosmotherm finds it as a bare filename
+# (COSMOtherm searches cwd before FDIR for f= references). This avoids issues with
+# absolute paths inside f="..." which the parser doesn't always handle.
+ln -sf "$COSMO_FILE" "$WORK_DIR/${MOLECULE}.cosmo"
+
 # --- 2. Render the pure-screen input ---
 PURE_INP="$WORK_DIR/pure-screen.inp"
 sed \
@@ -76,7 +81,6 @@ sed \
     -e "s|__CT_LICENSE_DIR__|$CT_LICENSE_DIR|g" \
     -e "s|__FDIR__|$FDIR|g" \
     -e "s|__MOLECULE__|$MOLECULE|g" \
-    -e "s|__MOL_COSMO__|$COSMO_FILE|g" \
     -e "s|__SOLVENTS_LIST__|$SOLVENTS_LIST|g" \
     "$PROTO_DIR/screen-pure.tmpl" > "$PURE_INP"
 
@@ -105,7 +109,6 @@ while IFS= read -r line || [[ -n "$line" ]]; do
         -e "s|__CT_LICENSE_DIR__|$CT_LICENSE_DIR|g" \
         -e "s|__FDIR__|$FDIR|g" \
         -e "s|__MOLECULE__|$MOLECULE|g" \
-        -e "s|__MOL_COSMO__|$COSMO_FILE|g" \
         -e "s|__MIX_LABEL__|$label|g" \
         -e "s|__SOLVENT1__|$sol1|g" \
         -e "s|__SOLVENT2__|$sol2|g" \
