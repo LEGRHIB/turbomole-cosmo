@@ -69,24 +69,28 @@ grep -v '^[[:space:]]*#' "$PROTO_DIR/solvents-pure.list" \
 N_PURE=$(wc -l < "$SOLVENTS_LIST")
 echo "[1/2] pure-solvent screen ($N_PURE solvents)..."
 
-# Symlink the solute .cosmo into WORK_DIR so cosmotherm finds it as a bare filename
-# (COSMOtherm searches cwd before FDIR for f= references). This avoids issues with
-# absolute paths inside f="..." which the parser doesn't always handle.
-ln -sf "$COSMO_FILE" "$WORK_DIR/${MOLECULE}.cosmo"
-
 # --- 2. Render the pure-screen input ---
+# Solute .cosmo is referenced via absolute path (COSMOtherm searches FDIR
+# for bare filenames; the molecule's .cosmo lives outside FDIR).
 PURE_INP="$WORK_DIR/pure-screen.inp"
 sed \
     -e "s|__CT_PARAM_PATH__|$CT_PARAM_PATH|g" \
     -e "s|__CT_LICENSE_DIR__|$CT_LICENSE_DIR|g" \
     -e "s|__FDIR__|$FDIR|g" \
     -e "s|__MOLECULE__|$MOLECULE|g" \
+    -e "s|__MOL_COSMO__|$COSMO_FILE|g" \
     -e "s|__SOLVENTS_LIST__|$SOLVENTS_LIST|g" \
     "$PROTO_DIR/screen-pure.tmpl" > "$PURE_INP"
 
 # Run pure screen (cosmotherm reads input from cwd, writes <input>.{out,tab})
-( cd "$WORK_DIR" && cosmotherm "$(basename "$PURE_INP")" )
-echo "  -> $WORK_DIR/pure-screen.tab"
+( cd "$WORK_DIR" && cosmotherm "$(basename "$PURE_INP")" ) || true
+PURE_TAB="$WORK_DIR/pure-screen.tab"
+if [[ -f "$PURE_TAB" && -s "$PURE_TAB" ]]; then
+    echo "  -> $PURE_TAB ($(wc -l < "$PURE_TAB") rows)"
+else
+    echo "  ✗ pure-screen FAILED — no .tab produced. See $WORK_DIR/pure-screen.out"
+    grep -m 5 -E 'ERROR|Error' "$WORK_DIR/pure-screen.out" 2>/dev/null | sed 's/^/    /'
+fi
 
 # --- 3. Mixture screens ---
 echo
@@ -104,11 +108,13 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     i=$((i + 1))
 
     MIX_INP="$WORK_DIR/mix-${label}.inp"
+    MIX_TAB="$WORK_DIR/mix-${label}.tab"
     sed \
         -e "s|__CT_PARAM_PATH__|$CT_PARAM_PATH|g" \
         -e "s|__CT_LICENSE_DIR__|$CT_LICENSE_DIR|g" \
         -e "s|__FDIR__|$FDIR|g" \
         -e "s|__MOLECULE__|$MOLECULE|g" \
+        -e "s|__MOL_COSMO__|$COSMO_FILE|g" \
         -e "s|__MIX_LABEL__|$label|g" \
         -e "s|__SOLVENT1__|$sol1|g" \
         -e "s|__SOLVENT2__|$sol2|g" \
@@ -117,11 +123,12 @@ while IFS= read -r line || [[ -n "$line" ]]; do
         "$PROTO_DIR/screen-mixture.tmpl" > "$MIX_INP"
 
     printf '  [%2d] %-30s %s/%s = %s/%s ... ' "$i" "$label" "$sol1" "$sol2" "$x1" "$x2"
-    if ( cd "$WORK_DIR" && cosmotherm "$(basename "$MIX_INP")" ) >/dev/null 2>&1; then
+    ( cd "$WORK_DIR" && cosmotherm "$(basename "$MIX_INP")" ) >/dev/null 2>&1 || true
+    if [[ -f "$MIX_TAB" && -s "$MIX_TAB" ]]; then
         echo "ok"
         ok=$((ok + 1))
     else
-        echo "FAIL (see $WORK_DIR/mix-${label}.out)"
+        echo "FAIL (no .tab)"
         fail=$((fail + 1))
     fi
 done < "$PROTO_DIR/mixtures-binary.list"

@@ -39,6 +39,6 @@ cyclohexane
 toluene
 1,4-dimethylbenzene
 
-# --- Halogenated (2) ---
-chloroform
+# --- Halogenated (1) ---
+# chloroform — NOT in BP-TZVPD-FINE database (would need to compute)
 1,2-dichloroethane
