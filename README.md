@@ -246,14 +246,24 @@ wall time for large molecules.
 $scfiterlimit      300
 $scfdamp   start=0.700  step=0.050  min=0.050
 $scforbitalshift  automatic=.3
+$fermi tmstrt=300 tmend=300 tmfac=1.0 hlcrt=1.0e-3 stop=1.0e-3
 ```
 
-These values handle difficult SCF convergence on large molecules (heavy
-damping for a rough initial guess, generous iteration budget, fixed orbital
-shift). The tuning is applied by `scripts/_tune_scf.sh`, which is called
-from both local-mode and SLURM-mode prep. Hand-editing `control` after prep
-is no longer needed. For `def2-SVP` and other protocols, no tuning is
-applied (defaults are fine for the smaller basis).
+The damping/shift/iterlimit triplet handles difficult SCF convergence on
+large molecules (heavy damping for a rough initial guess, generous iteration
+budget, fixed orbital shift).
+
+The `$fermi` block adds **Fermi smearing as a safety net** for systems with
+metallic-character HOMO/LUMO gaps. With `hlcrt=1.0e-3`, smearing only
+activates when the gap is below 1 mHa (~27 meV) — a no-op for normal-gap
+molecules (vancomycin, bombesin, small drugs) and a rescue for large
+proteins/peptides where standard SCF would oscillate forever between
+near-degenerate orbital occupations (lysozyme is a textbook example).
+
+The tuning is applied by `scripts/_tune_scf.sh`, which is called from both
+local-mode and SLURM-mode prep. Hand-editing `control` after prep is no
+longer needed. For `def2-SVP` and other protocols, no tuning is applied
+(defaults are fine for the smaller basis).
 
 ## How the answer files work
 
@@ -303,11 +313,25 @@ Run `chmod +x scripts/*.sh` after every `scp`.
 
 **SCF doesn't converge:**
 For BP-TZVPD-* protocols, the tuned SCF block is already applied by
-`prep_cosmo.sh` (see "Auto-tuned SCF for BP-TZVPD-*" above). If SCF still
-fails to converge: try increasing `--mem` in config.sh, or check if the
-starting geometry needs improvement (consider `xtb_preopt.sh` for 2D SDF
-inputs). For large molecules (>150 atoms) at TZVPD level, 120 GB may not
-be enough — try 200 GB on a bigmem node.
+`prep_cosmo.sh` (see "Auto-tuned SCF for BP-TZVPD-*" above), including
+Fermi smearing as a safety net for metallic-character systems. If SCF
+still fails to converge:
+- Confirm `$fermi` is present in control (`grep '^\$fermi' control`).
+  If missing — likely an old prep predating the smearing patch —
+  manually append: `$fermi tmstrt=300 tmend=300 tmfac=1.0 hlcrt=1.0e-3 stop=1.0e-3`
+  before `$end` and resubmit.
+- Try increasing `--mem` in config.sh, or check if the starting geometry
+  needs improvement (consider `xtb_preopt.sh` for 2D SDF inputs).
+- For large molecules (>150 atoms) at TZVPD level, 120 GB may not be
+  enough — try 200 GB on a bigmem node.
+
+**SCF energy oscillates wildly (e.g. ±10⁵ Hartree per iteration):**
+This is the classic metallic-character SCF failure — happens when HOMO/LUMO
+gap is below ~thermal kT (typical of large peptides/proteins with charged
+residues). Confirm with `tail` on `ridft.out` showing energy bouncing,
+density change ~10⁸, damping climbing toward 1.5+. Fix: add Fermi smearing
+(`$fermi` data group) — see "SCF doesn't converge" above. Restart from
+existing mos; usually converges in 5–20 cycles after smearing is enabled.
 
 **Wrong atom count after prepare_molecule.py:**
 Check `prep.log` for the cleaning report. Common issues: wrong `--chains`
