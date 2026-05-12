@@ -16,4 +16,4 @@ water-acetonitrile-50-50         h2o                    acetonitrile           0
 water-dmso-90-10                 h2o                    dimethylsulfoxide      0.90   0.10
 water-dmso-70-30                 h2o                    dimethylsulfoxide      0.70   0.30
 hexane-etac-50-50                hexane                 ethylacetate           0.50   0.50
-methanol-chloroform-50-50        methanol               chloroform             0.50   0.50
+methanol-chloroform-50-50        methanol               chcl3                  0.50   0.50

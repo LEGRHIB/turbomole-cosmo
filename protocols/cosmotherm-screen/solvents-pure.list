@@ -39,6 +39,6 @@ cyclohexane
 toluene
 1,4-dimethylbenzene
 
-# --- Halogenated (1) ---
-# chloroform — NOT in BP-TZVPD-FINE database (would need to compute)
+# --- Halogenated (2) ---
+chcl3                    # chloroform (COSMObase uses chemical formula)
 1,2-dichloroethane

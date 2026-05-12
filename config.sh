@@ -32,7 +32,7 @@ export SLURM_FINE_TIME="72:00:00"
 # Override per-molecule with: submit_cosmo.sh mol protocol --partition bigmem --cpus 72 --mem 2000000M
 export SLURM_OPT_CPUS=16
 export SLURM_OPT_MEM="120000M"
-export SLURM_OPT_TIME="72:00:00"
+export SLURM_OPT_TIME="168:00:00"   # 7d — jobex on large peptides routinely needs this
 
 # Bigmem defaults: used by --bigmem shortcut in full_pipeline.sh / prep_cosmo.sh
 # For large proteins (>500 atoms) that need bigmem partition for both prep and SCF
