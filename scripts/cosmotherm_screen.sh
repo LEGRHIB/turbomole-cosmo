@@ -74,11 +74,11 @@ ln -sf "$COSMO_FILE" "$LOCAL_FDIR/${MOLECULE}.cosmo"
 declare -A NEEDED_SOLVENTS
 NEEDED_SOLVENTS[h2o_c0.cosmo]=1
 
-# Pure-solvent panel
+# Pure-solvent panel — first token only (ignores inline comments)
 while IFS= read -r line || [[ -n "$line" ]]; do
     [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
-    sname=$(echo "$line" | tr -d '[:space:]')
-    NEEDED_SOLVENTS["${sname}_c0.cosmo"]=1
+    sname=$(echo "$line" | awk '{print $1}')
+    [[ -n "$sname" ]] && NEEDED_SOLVENTS["${sname}_c0.cosmo"]=1
 done < "$PROTO_DIR/solvents-pure.list"
 
 # Solvents from binary mixtures
