@@ -1,8 +1,12 @@
 # Solubility screening for __MOLECULE__ — BP-TZVPD-FINE parameterization.
+# Output: log10(x_RS), w_RS, log10(S_RS) in default COSMOtherm units (kcal/mol, A^3, amu)
+# to match the COSMOtherm GUI "Solubility Solvent Screening" output for direct comparison.
+# The `relative` keyword (suboption of solub, mutually exclusive with iterative — manual p.113-114)
+# triggers RS-flavor columns; UNIT=SI is omitted so COSMOtherm uses its default CGS units.
 ctd=BP_TZVPD_FINE_25.ctd CDIR=__CT_PARAM_PATH__ LDIR=__CT_LICENSE_DIR__ # Global command line
-FDIR=__FDIR__ UNIT=SI nocompw wtln                                       # Global command line
+FDIR=__FDIR__ nocompw wtln                                               # Global command line (UNIT default = kcal/mol, A^3, amu)
 !! Solubility solvent screening for __MOLECULE__ across pure solvents    # Comment line
 f="__MOLECULE__.cosmo" autoc                                             # Solute (compound 1)
 f="h2o_c0.cosmo" autoc                                                   # Water reference (compound 2)
 f_batch=__SOLVENTS_LIST__                                                # Pure solvents (compounds 3+)
-tc=25.0 solub screening solute=1 pure=3 force_qspr iterative xsolout_x_log10 wsolout_gg lsolout_moll_log10
+tc=25.0 solub screening solute=1 pure=3 force_qspr relative xsolout_x_log10 wsolout_gg lsolout_moll_log10

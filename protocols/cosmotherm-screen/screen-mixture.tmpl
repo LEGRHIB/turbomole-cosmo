@@ -5,7 +5,7 @@
 # water (e.g. water-ethanol), it appears twice as a compound — once at 0 (the
 # QSPR aux) and once at the mixture fraction — and COSMOtherm handles this fine.
 ctd=BP_TZVPD_FINE_25.ctd CDIR=__CT_PARAM_PATH__ LDIR=__CT_LICENSE_DIR__ # Global command line
-FDIR=__FDIR__ UNIT=SI nocompw wtln                                       # Global command line
+FDIR=__FDIR__ nocompw wtln                                               # Global command line (UNIT default = kcal/mol, A^3, amu — matches pure-screen for unit consistency)
 !! Solubility of __MOLECULE__ in mixture __MIX_LABEL__                   # Comment line
 f="__MOLECULE__.cosmo" autoc                                             # Solute (compound 1)
 f="h2o_c0.cosmo" autoc                                                   # Water reference (compound 2, QSPR aux)
