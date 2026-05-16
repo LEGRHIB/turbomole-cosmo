@@ -62,6 +62,22 @@ HEADER_RE = re.compile(r'^\s*Nr\s+(Solvent|Compound)\b', re.IGNORECASE)
 METADATA_KEYS = ('Property', 'Settings', 'Units', 'General')
 COMMENT_PREFIXES = ('#', '!')
 
+# Thermodynamic constant for the DG_fus correction that brings pure-screen
+# log10(x_RS) and mixture log10(x_solub) onto the same scale.
+# RT * ln(10) at 298.15 K, in kcal/mol:
+#   R = 1.987e-3 kcal/(mol·K), T = 298.15 K, ln(10) = 2.302585
+#   => 0.001987 * 298.15 * 2.302585 = 1.36418 kcal/mol
+RT_LN10_KCAL_AT_298K = 1.987204e-3 * 298.15 * 2.302585093
+
+
+def _to_float(v):
+    if v is None or v == '':
+        return None
+    try:
+        return float(v)
+    except (ValueError, TypeError):
+        return None
+
 
 # ---------------------------------------------------------------------------
 # Low-level parsing helpers
@@ -429,59 +445,357 @@ def write_pure_xlsx(out_path: Path, metadata: dict, rows: list[dict], molecule: 
     return True
 
 
+def _find_col(row_keys, *patterns) -> str | None:
+    """Return the first key in row_keys whose lowercased name contains all patterns."""
+    for k in row_keys:
+        kl = k.lower()
+        if all(p.lower() in kl for p in patterns):
+            return k
+    return None
+
+
+def _harvest_dg_fus(mixtures: dict) -> float | None:
+    """Pull DG_fus (kcal/mol) from any mixture's solute self-row.
+
+    DG_fus is a property of the solute, not the solvent, so it should be the same
+    across every mixture. We grab the first usable value and verify others agree
+    within a tolerance.
+    """
+    candidates = []
+    for label, (_, _, rows) in mixtures.items():
+        for r in rows:
+            if r.get('_role') == 'solute':
+                dg = _to_float(r.get('DG_fus'))
+                if dg is not None:
+                    candidates.append((label, dg))
+                break
+    if not candidates:
+        return None
+    base = candidates[0][1]
+    for lbl, dg in candidates[1:]:
+        if abs(dg - base) > 1e-2:
+            print(f"WARN: DG_fus varies across mixtures ({candidates[0][0]}={base:.4f}, "
+                  f"{lbl}={dg:.4f}) — using first.", file=sys.stderr)
+    return base
+
+
+def _build_mix_summary(label: str, rows: list[dict]) -> dict:
+    """Collapse the per-compound rows of one mixture into a single summary dict.
+
+    Picks out the solute self-row (role='solute') and the two real solvent rows
+    (role='solvent' with non-None _x_in_mix), skipping the QSPR-aux water row
+    (x_in_mix is None).
+    """
+    solute = next((r for r in rows if r.get('_role') == 'solute'), None)
+    solvent_rows = [
+        r for r in rows
+        if r.get('_role') == 'solvent' and r.get('_x_in_mix') is not None
+    ]
+    sol1 = solvent_rows[0] if solvent_rows else {}
+    sol2 = solvent_rows[1] if len(solvent_rows) > 1 else {}
+
+    summary: dict = {
+        'mixture': label,
+        'sol1': sol1.get('_compound', ''),
+        'x1': sol1.get('_x_in_mix'),
+        'sol2': sol2.get('_compound', ''),
+        'x2': sol2.get('_x_in_mix'),
+        'T_K': 298.15,
+        'iter_diverged': any(r.get('_diverged') for r in rows),
+    }
+
+    # Human-readable composition column
+    parts = []
+    if summary['sol1']:
+        parts.append(f"{summary['sol1']} ({summary['x1']:.2f})")
+    if summary['sol2']:
+        parts.append(f"{summary['sol2']} ({summary['x2']:.2f})")
+    summary['composition'] = ' / '.join(parts)
+
+    if not solute:
+        return summary
+
+    # Detect column names dynamically — pr_ni-enabled .tab files have parallel
+    # *_ni columns alongside the iterative ones. Fall back gracefully when pr_ni
+    # wasn't requested (older runs).
+    keys = list(solute.keys())
+    col_x_iter = _find_col(keys, 'log10(x')
+    col_x_ni = next((k for k in keys if 'log10(x' in k.lower() and '_ni' in k.lower()), None)
+    if col_x_ni == col_x_iter:
+        col_x_iter = next((k for k in keys if 'log10(x' in k.lower() and '_ni' not in k.lower()), None)
+    col_w_iter = _find_col(keys, 'w_solub') or _find_col(keys, 'w_fract')
+    col_w_ni = next((k for k in keys if 'w_solub' in k.lower() and '_ni' in k.lower()), None)
+    if col_w_ni == col_w_iter:
+        col_w_iter = next((k for k in keys if 'w_solub' in k.lower() and '_ni' not in k.lower()), None)
+    col_logS_iter = _find_col(keys, 'log10(s')
+    col_logS_ni = next((k for k in keys if 'log10(s' in k.lower() and '_ni' in k.lower()), None)
+    if col_logS_ni == col_logS_iter:
+        col_logS_iter = next((k for k in keys if 'log10(s' in k.lower() and '_ni' not in k.lower()), None)
+
+    summary['log10(x_solub)_iter'] = _to_float(solute.get(col_x_iter)) if col_x_iter else None
+    summary['log10(x_solub)_ni'] = _to_float(solute.get(col_x_ni)) if col_x_ni else None
+    summary['w_solub_iter'] = _to_float(solute.get(col_w_iter)) if col_w_iter else None
+    summary['w_solub_ni'] = _to_float(solute.get(col_w_ni)) if col_w_ni else None
+    summary['log10(S)_iter'] = _to_float(solute.get(col_logS_iter)) if col_logS_iter else None
+    summary['log10(S)_ni'] = _to_float(solute.get(col_logS_ni)) if col_logS_ni else None
+    summary['mu_solute_in_mix'] = _to_float(solute.get('mu(solv)'))
+    summary['DG_fus'] = _to_float(solute.get('DG_fus'))
+
+    # PRIMARY column selection:
+    # The COSMOtherm iterative solver collapses to log10(x_solub) = 0.0
+    # ("miscibility floor") for poorly-soluble solutes in mixtures even when
+    # the physical solubility is many orders of magnitude smaller. That floor
+    # is a numerical artifact, not a real prediction. So we prefer pr_ni (the
+    # non-iterative zero-order estimate) whenever iterative either diverged
+    # (bracketed values flag set _diverged) OR collapsed to exactly 0.
+    def _prefer_ni(iter_val, ni_val) -> tuple:
+        if ni_val is None:
+            return iter_val, 'iterative' if iter_val is not None else 'missing'
+        if iter_val is None:
+            return ni_val, 'pr_ni'
+        # iter=0 with no brackets = miscibility-floor artifact
+        if summary['iter_diverged'] or abs(iter_val) < 1e-9:
+            return ni_val, 'pr_ni'
+        return iter_val, 'iterative'
+
+    p_x, p_x_src = _prefer_ni(summary['log10(x_solub)_iter'], summary['log10(x_solub)_ni'])
+    summary['log10(x_solub)_primary'] = p_x
+    summary['primary_source'] = p_x_src
+
+    p_w, _ = _prefer_ni(summary['w_solub_iter'], summary['w_solub_ni'])
+    summary['w_solub_primary'] = p_w
+
+    p_s, _ = _prefer_ni(summary['log10(S)_iter'], summary['log10(S)_ni'])
+    summary['log10(S)_primary'] = p_s
+
+    return summary
+
+
 def write_mixtures_xlsx(
     out_path: Path,
     mixtures: dict[str, tuple[dict, dict, list[dict]]],
     molecule: str,
 ) -> bool:
-    """Emit an xlsx with all mixture data, one sheet for all mixtures."""
+    """Emit an xlsx with TWO sheets:
+
+    - Sheet 1 "Mixture summary": one row per mixture, columns optimized for
+      the user-facing question "how soluble is the solute in this mixture?".
+      Sorted descending by log10(x_solub)_primary.
+    - Sheet 2 "Raw audit": flat dump of per-compound rows, QSPR-aux water row
+      hidden, noise columns dropped. For verification only.
+    """
+    if not HAS_OPENPYXL:
+        return False
+
+    wb = Workbook()
+    bold = Font(bold=True)
+    italic = Font(italic=True)
+    grey = PatternFill("solid", fgColor="EEEEEE")
+
+    # ----- Sheet 1: Mixture summary -----
+    ws1 = wb.active
+    ws1.title = "Mixture summary"
+
+    # Build per-mixture summary rows
+    summaries = [_build_mix_summary(label, rows) for label, (_, _, rows) in mixtures.items()]
+
+    # Sort descending by log10(x_solub)_primary, None last
+    def sort_key(s):
+        v = s.get('log10(x_solub)_primary')
+        return v if v is not None else float('-inf')
+    summaries.sort(key=sort_key, reverse=True)
+
+    # Note row explaining the primary-source logic
+    note = (
+        f"One row per mixture. Sorted descending by log10(x_solub) (primary). "
+        f"PRIMARY = non-iterative (pr_ni) when iterative diverged, else iterative. "
+        f"See 'primary_source' column."
+    )
+    ws1.cell(row=1, column=1, value=note).font = italic
+    ws1.merge_cells(start_row=1, start_column=1, end_row=1, end_column=16)
+
+    summary_cols = [
+        'mixture', 'composition', 'sol1', 'x1', 'sol2', 'x2', 'T_K',
+        'log10(x_solub)_primary', 'primary_source', 'iter_diverged',
+        'log10(x_solub)_iter', 'log10(x_solub)_ni',
+        'w_solub_primary', 'log10(S)_primary',
+        'mu_solute_in_mix', 'DG_fus',
+    ]
+    header_row = 3
+    for ci, col in enumerate(summary_cols, 1):
+        c = ws1.cell(row=header_row, column=ci, value=col)
+        c.font = bold
+        c.fill = grey
+    for ri, s in enumerate(summaries, header_row + 1):
+        for ci, col in enumerate(summary_cols, 1):
+            v = s.get(col)
+            ws1.cell(row=ri, column=ci, value=v)
+    for ci, col in enumerate(summary_cols, 1):
+        ws1.column_dimensions[chr(ord('A') + ci - 1)].width = max(len(col) + 2, 14)
+
+    # ----- Sheet 2: Raw audit -----
+    ws2 = wb.create_sheet("Raw audit")
+
+    # Hide QSPR-aux water row (Nr=2 with x_in_mix=None) and drop noise columns.
+    AUDIT_DROP_COLS = {
+        'mu(water)', 'N_Ring', 'N_Amino', 'MolWeight', 'Volume',
+        'Exp-State', 'Tmelt', 'DH_fus',
+    }
+
+    all_rows: list[dict] = []
+    seen_cols: list[str] = []
+    seen_set: set[str] = set()
+    for label, (_, _, rows) in mixtures.items():
+        for r in rows:
+            # Hide QSPR aux: the water reference compound has x_in_mix=None and Nr==2
+            if r.get('_role') == 'solvent' and r.get('_x_in_mix') is None:
+                continue
+            r2 = dict(r)
+            r2['mixture'] = label
+            all_rows.append(r2)
+            for k in r:
+                if k.startswith('_'):
+                    continue
+                if k in AUDIT_DROP_COLS:
+                    continue
+                if k not in seen_set:
+                    seen_cols.append(k)
+                    seen_set.add(k)
+
+    if all_rows:
+        meta_cols = ['mixture', 'role', 'compound_nr', 'x_in_mix', 'diverged']
+        cols_out = meta_cols + seen_cols
+        for ci, col in enumerate(cols_out, 1):
+            c = ws2.cell(row=1, column=ci, value=col)
+            c.font = bold
+            c.fill = grey
+        for ri, r in enumerate(all_rows, 2):
+            ws2.cell(row=ri, column=1, value=r.get('mixture'))
+            ws2.cell(row=ri, column=2, value=r.get('_role'))
+            ws2.cell(row=ri, column=3, value=r.get('_nr'))
+            ws2.cell(row=ri, column=4, value=r.get('_x_in_mix'))
+            ws2.cell(row=ri, column=5, value=bool(r.get('_diverged')))
+            for ci, col in enumerate(seen_cols, len(meta_cols) + 1):
+                ws2.cell(row=ri, column=ci, value=_to_number_or_text(r.get(col, '')))
+        for ci, col in enumerate(cols_out, 1):
+            ws2.column_dimensions[chr(ord('A') + ci - 1)].width = max(len(col) + 2, 14)
+
+    wb.save(out_path)
+    return True
+
+
+def write_combined_ranking_xlsx(
+    out_path: Path,
+    pure_rows: list[dict],
+    mixtures: dict[str, tuple[dict, dict, list[dict]]],
+    molecule: str,
+) -> bool:
+    """Unified pure+mix ranking, single sheet, one row per system.
+
+    Brings the pure-screen 'log10(x_RS)' values onto the same scale as the
+    mixture-screen 'log10(x_solub)' values by subtracting DG_fus/(RT·ln 10).
+    DG_fus is harvested from any mixture's solute self-row. If no mixture is
+    available (no DG_fus to subtract), the pure rows show 'log10(x_RS)' as-is
+    and the ranking is pure-only.
+    """
     if not HAS_OPENPYXL:
         return False
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "Mixtures"
+    ws.title = "Screening ranking"
 
     bold = Font(bold=True)
+    italic = Font(italic=True)
     grey = PatternFill("solid", fgColor="EEEEEE")
 
-    # Aggregate rows across all mix-*.tab files
-    all_rows: list[dict] = []
-    all_tab_cols: list[str] = []
-    seen_cols: set[str] = set()
+    dg_fus = _harvest_dg_fus(mixtures) if mixtures else None
+
+    combined: list[dict] = []
+
+    # Pure solvents — pull log10(x_RS), w_RS, log10(S_RS) and DG_fus-correct.
+    for r in pure_rows:
+        x_rs = _to_float(r.get('log10(x_RS)'))
+        w_rs = _to_float(r.get('w_RS'))
+        s_rs = _to_float(r.get('log10(S_RS)'))
+        if dg_fus is not None and x_rs is not None:
+            x_solub_est = x_rs - dg_fus / RT_LN10_KCAL_AT_298K
+        else:
+            x_solub_est = x_rs  # No correction available — use x_RS raw
+        if dg_fus is not None and s_rs is not None:
+            s_est = s_rs - dg_fus / RT_LN10_KCAL_AT_298K
+        else:
+            s_est = s_rs
+
+        combined.append({
+            'system': r.get('Solvent', ''),
+            'type': 'pure',
+            'composition': r.get('Solvent', ''),
+            'log10(x_solub)': x_solub_est,
+            'w_solub': w_rs,
+            'log10(S)': s_est,
+            'diverged': bool(r.get('_diverged')),
+            'source': 'pure-screen x_RS (DG_fus-corrected)' if dg_fus is not None else 'pure-screen x_RS (raw)',
+        })
+
+    # Mixtures — pick the primary solubility number per mixture
     for label, (_, _, rows) in mixtures.items():
-        for r in rows:
-            r2 = dict(r)
-            r2['mixture'] = label
-            all_rows.append(r2)
-            for k in r:
-                if not k.startswith('_') and k not in seen_cols:
-                    all_tab_cols.append(k)
-                    seen_cols.add(k)
+        s = _build_mix_summary(label, rows)
+        combined.append({
+            'system': s['mixture'],
+            'type': 'mixture',
+            'composition': s['composition'],
+            'log10(x_solub)': s.get('log10(x_solub)_primary'),
+            'w_solub': s.get('w_solub_primary'),
+            'log10(S)': s.get('log10(S)_primary'),
+            'diverged': s.get('iter_diverged', False),
+            'source': f"mixture {s.get('primary_source', 'iterative')}",
+        })
 
-    if not all_rows:
-        wb.save(out_path)
-        return True
+    # Sort descending by log10(x_solub) — None goes last
+    def keyfn(c):
+        v = c.get('log10(x_solub)')
+        return v if v is not None else float('-inf')
+    combined.sort(key=keyfn, reverse=True)
 
-    meta_cols = ['mixture', 'role', 'compound_nr', 'x_in_mix', 'diverged']
-    cols_out = meta_cols + all_tab_cols
+    # Header note
+    if dg_fus is not None:
+        note = (
+            f"Pure and mixture solubilities on same log10(x_solub) scale via DG_fus "
+            f"correction.  DG_fus = {dg_fus:.4f} kcal/mol;  RT·ln10 (298.15 K) = "
+            f"{RT_LN10_KCAL_AT_298K:.4f} kcal/mol;  shift = "
+            f"{dg_fus / RT_LN10_KCAL_AT_298K:.3f} log units.  Pure x_RS minus this "
+            f"shift; mixture iterative-or-pr_ni as-is (see 'source' column)."
+        )
+    else:
+        note = (
+            "No DG_fus available (no mixtures parsed) — pure rows show log10(x_RS) "
+            "as-is; not on the same scale as mixture values."
+        )
+    ws.cell(row=1, column=1, value=note).font = italic
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=9)
 
-    for ci, col in enumerate(cols_out, 1):
-        c = ws.cell(row=1, column=ci, value=col)
+    headers = ['rank', 'system', 'type', 'composition',
+               'log10(x_solub)', 'w_solub', 'log10(S)', 'diverged', 'source']
+    header_row = 3
+    for ci, h in enumerate(headers, 1):
+        c = ws.cell(row=header_row, column=ci, value=h)
         c.font = bold
         c.fill = grey
 
-    for ri, row in enumerate(all_rows, 2):
-        ws.cell(row=ri, column=1, value=row.get('mixture'))
-        ws.cell(row=ri, column=2, value=row.get('_role'))
-        ws.cell(row=ri, column=3, value=row.get('_nr'))
-        ws.cell(row=ri, column=4, value=row.get('_x_in_mix'))
-        ws.cell(row=ri, column=5, value=bool(row.get('_diverged')))
-        for ci, col in enumerate(all_tab_cols, len(meta_cols) + 1):
-            ws.cell(row=ri, column=ci, value=_to_number_or_text(row.get(col, '')))
+    for i, row in enumerate(combined, 1):
+        ws.cell(row=header_row + i, column=1, value=i)
+        ws.cell(row=header_row + i, column=2, value=row['system'])
+        ws.cell(row=header_row + i, column=3, value=row['type'])
+        ws.cell(row=header_row + i, column=4, value=row['composition'])
+        ws.cell(row=header_row + i, column=5, value=row['log10(x_solub)'])
+        ws.cell(row=header_row + i, column=6, value=row['w_solub'])
+        ws.cell(row=header_row + i, column=7, value=row['log10(S)'])
+        ws.cell(row=header_row + i, column=8, value=row['diverged'])
+        ws.cell(row=header_row + i, column=9, value=row['source'])
 
-    for ci, col in enumerate(cols_out, 1):
-        ws.column_dimensions[chr(ord('A') + ci - 1)].width = max(len(col) + 2, 14)
+    for ci, h in enumerate(headers, 1):
+        ws.column_dimensions[chr(ord('A') + ci - 1)].width = max(len(h) + 2, 14)
 
     wb.save(out_path)
     return True
@@ -576,6 +890,7 @@ def main() -> int:
     # Write outputs
     out_pure_xlsx = work_dir / f"{molecule}-pure-screening.xlsx"
     out_mix_xlsx = work_dir / f"{molecule}-mixtures.xlsx"
+    out_rank_xlsx = work_dir / f"{molecule}-screening-ranking.xlsx"
     out_csv = work_dir / "results.csv"
 
     wrote_xlsx = False
@@ -587,6 +902,10 @@ def main() -> int:
         if mixtures:
             write_mixtures_xlsx(out_mix_xlsx, mixtures, molecule)
             print(f"wrote {out_mix_xlsx}")
+            wrote_xlsx = True
+        if pure_rows or mixtures:
+            write_combined_ranking_xlsx(out_rank_xlsx, pure_rows, mixtures, molecule)
+            print(f"wrote {out_rank_xlsx}")
             wrote_xlsx = True
     else:
         print(
