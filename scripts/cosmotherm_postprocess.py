@@ -454,6 +454,16 @@ def _find_col(row_keys, *patterns) -> str | None:
     return None
 
 
+def _is_ni(col_name: str) -> bool:
+    """True if a column name represents a pr_ni (non-iterative) variant.
+
+    COSMOtherm names these with the prefix 'NI-' (e.g. 'NI-log10(x_solub)',
+    'NI-w_solub', 'NI-mu(solv)'). We accept several spellings defensively.
+    """
+    nl = col_name.lower()
+    return nl.startswith('ni-') or nl.startswith('ni_') or '_ni' in nl or nl.endswith('-ni')
+
+
 def _harvest_dg_fus(mixtures: dict) -> float | None:
     """Pull DG_fus (kcal/mol) from any mixture's solute self-row.
 
@@ -516,21 +526,19 @@ def _build_mix_summary(label: str, rows: list[dict]) -> dict:
         return summary
 
     # Detect column names dynamically — pr_ni-enabled .tab files have parallel
-    # *_ni columns alongside the iterative ones. Fall back gracefully when pr_ni
-    # wasn't requested (older runs).
+    # NI-*  columns alongside the iterative ones (per COSMOtherm 2026 output:
+    # 'NI-log10(x_solub)', 'NI-w_solub', 'NI-log10(S)', 'NI-mu(solv)'). Fall
+    # back gracefully when pr_ni wasn't requested (older runs without _ni cols).
     keys = list(solute.keys())
-    col_x_iter = _find_col(keys, 'log10(x')
-    col_x_ni = next((k for k in keys if 'log10(x' in k.lower() and '_ni' in k.lower()), None)
-    if col_x_ni == col_x_iter:
-        col_x_iter = next((k for k in keys if 'log10(x' in k.lower() and '_ni' not in k.lower()), None)
-    col_w_iter = _find_col(keys, 'w_solub') or _find_col(keys, 'w_fract')
-    col_w_ni = next((k for k in keys if 'w_solub' in k.lower() and '_ni' in k.lower()), None)
-    if col_w_ni == col_w_iter:
-        col_w_iter = next((k for k in keys if 'w_solub' in k.lower() and '_ni' not in k.lower()), None)
-    col_logS_iter = _find_col(keys, 'log10(s')
-    col_logS_ni = next((k for k in keys if 'log10(s' in k.lower() and '_ni' in k.lower()), None)
-    if col_logS_ni == col_logS_iter:
-        col_logS_iter = next((k for k in keys if 'log10(s' in k.lower() and '_ni' not in k.lower()), None)
+    col_x_iter = next((k for k in keys if 'log10(x' in k.lower() and not _is_ni(k)), None)
+    col_x_ni = next((k for k in keys if 'log10(x' in k.lower() and _is_ni(k)), None)
+    col_w_iter = next(
+        (k for k in keys if ('w_solub' in k.lower() or 'w_fract' in k.lower()) and not _is_ni(k)),
+        None,
+    )
+    col_w_ni = next((k for k in keys if 'w_solub' in k.lower() and _is_ni(k)), None)
+    col_logS_iter = next((k for k in keys if 'log10(s' in k.lower() and not _is_ni(k)), None)
+    col_logS_ni = next((k for k in keys if 'log10(s' in k.lower() and _is_ni(k)), None)
 
     summary['log10(x_solub)_iter'] = _to_float(solute.get(col_x_iter)) if col_x_iter else None
     summary['log10(x_solub)_ni'] = _to_float(solute.get(col_x_ni)) if col_x_ni else None
