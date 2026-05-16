@@ -31,7 +31,7 @@ if [[ ! -f control ]]; then
 fi
 
 case "$PROTOCOL" in
-  BP-TZVPD-*)
+  BP-TZVPD-*|BP-SVP-FINE)
     sed -i \
       -e 's|^\$scfiterlimit.*|$scfiterlimit      300|' \
       -e 's|^\$scfdamp.*|$scfdamp   start=0.700  step=0.050  min=0.050|' \
