@@ -268,7 +268,10 @@ export SP_ONLY XTB_FLAGS XTB_LOG_NAME XTB_MODE_DESC SOLVENT OVR_THREADS
 # ==============================================================================
 if $USE_SLURM; then
   PREP_PARTITION="${OVR_PARTITION:-${PARTITION}}"
-  SLURM_SCRIPT="$XTB_DIR/xtb_preopt_${MOLECULE}.slurm"
+  # Namespace the generated submission script by GFN version + timestamp so
+  # concurrent diagnostic submissions (e.g. GFN1 fallback alongside GFN2
+  # Schmitz recipe) leave a distinct record of what each sbatch saw.
+  SLURM_SCRIPT="$XTB_DIR/xtb_preopt_${MOLECULE}_gfn${GFN_VERSION}_$(date +%s).slurm"
 
   cat > "$SLURM_SCRIPT" <<SLURM_EOF
 #!/bin/bash -l
@@ -281,8 +284,8 @@ if $USE_SLURM; then
 #SBATCH --time=${OVR_TIME}
 #SBATCH --mem=${OVR_MEM}
 #SBATCH --job-name=${MOLECULE}-xtb-opt
-#SBATCH --output=${XTB_DIR}/xtb-preopt.out
-#SBATCH --error=${XTB_DIR}/xtb-preopt.err
+#SBATCH --output=${XTB_DIR}/xtb-preopt-gfn${GFN_VERSION}-%j.out
+#SBATCH --error=${XTB_DIR}/xtb-preopt-gfn${GFN_VERSION}-%j.err
 
 set -euo pipefail
 
@@ -335,17 +338,27 @@ echo
 echo "[1/3] x2t: ${MOLECULE}.xyz -> coord"
 x2t "${MOL_DIR}/${MOLECULE}.xyz" > coord
 
+# Namespace runtime output paths by GFN level + SLURM job ID so concurrent
+# diagnostic runs (e.g. GFN1 fallback alongside GFN2 Schmitz recipe) never
+# overwrite each other's logs or success stamps. ${LOG_DIR} and
+# ${XTB_LOG_NAME} are expanded at heredoc-generation time (parent shell);
+# JOB_TAG and XTB_LOG are resolved at SLURM runtime.
+JOB_TAG="gfn${GFN_VERSION}-\$SLURM_JOB_ID"
+XTB_LOG="${LOG_DIR}/${XTB_LOG_NAME%.log}-\${JOB_TAG}.log"
+
 echo "[2/3] xtb ${XTB_FLAGS} --gfn ${GFN_VERSION} --chrg ${CHARGE}"
+echo "      log -> \$XTB_LOG"
 xtb coord ${XTB_FLAGS} --gfn "${GFN_VERSION}" --chrg "${CHARGE}" \
-    > "${LOG_DIR}/${XTB_LOG_NAME}" 2>&1
+    > "\$XTB_LOG" 2>&1
 
 if [[ "${SP_ONLY}" == "true" ]]; then
   echo "      single-point complete; skipping geometry write-back"
-  grep -E "TOTAL ENERGY|HOMO-LUMO GAP" "${LOG_DIR}/${XTB_LOG_NAME}" | tail -5 || true
-  echo "XTB_SP_OK" > "${XTB_DIR}/xtb_sp_ok.stamp"
-  echo "\$(date -Iseconds)" >> "${XTB_DIR}/xtb_sp_ok.stamp"
-  echo "gfn=${GFN_VERSION} charge=${CHARGE} job=\$SLURM_JOB_ID" >> "${XTB_DIR}/xtb_sp_ok.stamp"
-  cp "${LOG_DIR}/${XTB_LOG_NAME}" "${XTB_DIR}/" 2>/dev/null || true
+  grep -E "TOTAL ENERGY|HOMO-LUMO GAP" "\$XTB_LOG" | tail -5 || true
+  STAMP="${XTB_DIR}/xtb_sp_ok-\${JOB_TAG}.stamp"
+  echo "XTB_SP_OK" > "\$STAMP"
+  echo "\$(date -Iseconds)" >> "\$STAMP"
+  echo "gfn=${GFN_VERSION} charge=${CHARGE} job=\$SLURM_JOB_ID" >> "\$STAMP"
+  cp "\$XTB_LOG" "${XTB_DIR}/" 2>/dev/null || true
   rm -rf "\$WORKDIR"
   exit 0
 fi
@@ -389,12 +402,13 @@ fi
 cp xtbopt.coord "${XTB_DIR}/coord_optimized"
 cp xtbopt.log "${XTB_DIR}/" 2>/dev/null || true
 
-FINAL_E=\$(grep "TOTAL ENERGY" "${LOG_DIR}/${XTB_LOG_NAME}" | tail -1 | awk '{print \$4}')
-N_CYCLES=\$(grep -c "GEOMETRY OPTIMIZATION CYCLE" "${LOG_DIR}/${XTB_LOG_NAME}" 2>/dev/null || echo "?")
+FINAL_E=\$(grep "TOTAL ENERGY" "\$XTB_LOG" | tail -1 | awk '{print \$4}')
+N_CYCLES=\$(grep -c "GEOMETRY OPTIMIZATION CYCLE" "\$XTB_LOG" 2>/dev/null || echo "?")
 
-echo "XTB_PREOPT_OK" > "${XTB_DIR}/xtb_ok.stamp"
-echo "\$(date -Iseconds)" >> "${XTB_DIR}/xtb_ok.stamp"
-echo "gfn=${GFN_VERSION} opt=${OPT_LEVEL} charge=${CHARGE} cycles=\$N_CYCLES energy=\$FINAL_E job=\$SLURM_JOB_ID" >> "${XTB_DIR}/xtb_ok.stamp"
+STAMP="${XTB_DIR}/xtb_ok-\${JOB_TAG}.stamp"
+echo "XTB_PREOPT_OK" > "\$STAMP"
+echo "\$(date -Iseconds)" >> "\$STAMP"
+echo "gfn=${GFN_VERSION} opt=${OPT_LEVEL} charge=${CHARGE} cycles=\$N_CYCLES energy=\$FINAL_E job=\$SLURM_JOB_ID" >> "\$STAMP"
 
 echo
 echo "Pre-optimization complete: \$N_CYCLES cycles, energy=\$FINAL_E"
@@ -423,9 +437,15 @@ SLURM_EOF
   echo "xTB Job ID: $JOB_ID"
   echo "Monitor:    squeue --clusters=$CLUSTER -j $JOB_ID"
   echo
+  if $SP_ONLY; then
+    STAMP_NAME="xtb_sp_ok-gfn${GFN_VERSION}-${JOB_ID}.stamp"
+  else
+    STAMP_NAME="xtb_ok-gfn${GFN_VERSION}-${JOB_ID}.stamp"
+  fi
   echo "After job completes:"
-  echo "  1. cat $XTB_DIR/xtb_ok.stamp"
-  echo "  2. scripts/run_cosmo.sh $MOLECULE BP-TZVPD-OPT"
+  echo "  1. cat $XTB_DIR/$STAMP_NAME"
+  echo "  2. tail $XTB_DIR/xtb-preopt-gfn${GFN_VERSION}-${JOB_ID}.out"
+  echo "  3. scripts/run_cosmo.sh $MOLECULE BP-TZVPD-OPT"
 
   exit 0
 fi
