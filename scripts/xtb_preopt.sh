@@ -16,10 +16,14 @@
 #   --gfn N              GFN version: 0, 1, or 2 (default: 2)
 #   --opt-level LEVEL    Optimization level: crude, sloppy, loose, lax,
 #                        normal, tight, vtight, extreme (default: tight)
+#   --sp                 Single-point energy only (no geometry opt). Use this
+#                        as a diagnostic: confirms xtb runs at all on the
+#                        molecule before committing to a long opt run.
 #   --slurm              Submit as a SLURM job instead of running locally
 #   --partition NAME     SLURM partition (default: from config.sh)
 #   --cpus N             CPU count (default: 16)
-#   --mem SIZE           Memory (default: 20000M)
+#   --mem SIZE           Memory (default: 20000M). For >1500-atom systems
+#                        (e.g. lysozyme), use --mem 500G --partition bigmem.
 #   --time HH:MM:SS      Wall time (default: 02:00:00)
 #
 # Examples:
@@ -32,6 +36,10 @@
 #   # GFN0 first (no SCF, always converges), then GFN2
 #   scripts/xtb_preopt.sh mymolecule --gfn 0
 #   scripts/xtb_preopt.sh mymolecule --gfn 2
+#
+#   # Diagnostic SP on lysozyme (confirms xtb + memory are OK before opt)
+#   scripts/xtb_preopt.sh lysozyme --sp --slurm --partition bigmem \
+#       --cpus 36 --mem 500G --time 01:00:00
 # -----------------------------------------------------------------------------
 
 set -euo pipefail
@@ -45,6 +53,7 @@ source "$REPO_ROOT/config.sh"
 MOLECULE=""
 GFN_VERSION=2
 OPT_LEVEL="tight"
+SP_ONLY=false
 USE_SLURM=false
 OVR_PARTITION=""
 OVR_CPUS="16"
@@ -55,6 +64,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --gfn)        GFN_VERSION="$2"; shift 2 ;;
     --opt-level)  OPT_LEVEL="$2"; shift 2 ;;
+    --sp)         SP_ONLY=true; shift ;;
     --slurm)      USE_SLURM=true; shift ;;
     --partition)  OVR_PARTITION="$2"; shift 2 ;;
     --cpus)       OVR_CPUS="$2"; shift 2 ;;
@@ -215,6 +225,18 @@ with open('$MOL_DIR/$MOLECULE.xyz', 'w') as f:
   echo "  scripts/run_cosmo.sh $MOLECULE BP-TZVPD-OPT"
 }
 
+# --- Resolve xtb mode (single-point vs geometry opt) -------------------------
+if $SP_ONLY; then
+  XTB_FLAGS="--sp"
+  XTB_LOG_NAME="xtb_sp.log"
+  XTB_MODE_DESC="Single-Point Energy"
+else
+  XTB_FLAGS="--opt $OPT_LEVEL"
+  XTB_LOG_NAME="xtb_opt.log"
+  XTB_MODE_DESC="Pre-Optimization"
+fi
+export SP_ONLY XTB_FLAGS XTB_LOG_NAME XTB_MODE_DESC
+
 # ==============================================================================
 # SLURM mode
 # ==============================================================================
@@ -238,12 +260,20 @@ if $USE_SLURM; then
 
 set -euo pipefail
 
-module load xtb/6.7.1-gfbf-2024a
+# Load TURBOMOLE FIRST, then the xtb module, so the module's xtb 6.7.1
+# wins over the bundled xtb 6.6.1 in \$TURBOMOLE_ROOT/bin (which is
+# missing param_gfn0-xtb.txt and crashes on large systems).
 source ${TURBOMOLE_ROOT}/vars
 export PARA_ARCH=SMP
 export TURBOMOLE_SYSNAME=${TURBOMOLE_SYSNAME}
 export PATH=${TURBOMOLE_ROOT}/bin/${TURBOMOLE_SYSNAME}:${TURBOMOLE_ROOT}/scripts:\$PATH
 export OMP_NUM_THREADS=\$SLURM_CPUS_PER_TASK
+
+module load xtb/6.7.1-gfbf-2024a
+
+# Sanity-check which xtb we're actually about to run
+echo "xtb resolved to: \$(which xtb)"
+xtb --version 2>&1 | head -3 || true
 
 # Lift the stack size limit — xtb's recursive integral evaluator
 # segfaults at the default 8 MB stack for systems >~1500 atoms.
@@ -255,11 +285,11 @@ mkdir -p "\$WORKDIR"
 # --- Inline the optimization steps ---
 cd "\$WORKDIR"
 
-echo "=== GFN${GFN_VERSION}-xTB Pre-Optimization (SLURM job \$SLURM_JOB_ID) ==="
+echo "=== GFN${GFN_VERSION}-xTB ${XTB_MODE_DESC} (SLURM job \$SLURM_JOB_ID) ==="
 echo "  Molecule:  ${MOLECULE}"
 echo "  Charge:    ${CHARGE}"
 echo "  GFN:       ${GFN_VERSION}"
-echo "  Opt level: ${OPT_LEVEL}"
+echo "  Mode:      ${XTB_MODE_DESC}"
 echo "  Node:      \$(hostname)"
 echo "  CPUs:      \$SLURM_CPUS_PER_TASK"
 echo "  Stack:     \$(ulimit -s)"
@@ -268,9 +298,20 @@ echo
 echo "[1/3] x2t: ${MOLECULE}.xyz -> coord"
 x2t "${MOL_DIR}/${MOLECULE}.xyz" > coord
 
-echo "[2/3] xtb --opt ${OPT_LEVEL} --gfn ${GFN_VERSION} --chrg ${CHARGE}"
-xtb coord --opt "${OPT_LEVEL}" --gfn "${GFN_VERSION}" --chrg "${CHARGE}" \
-    > "${LOG_DIR}/xtb_opt.log" 2>&1
+echo "[2/3] xtb ${XTB_FLAGS} --gfn ${GFN_VERSION} --chrg ${CHARGE}"
+xtb coord ${XTB_FLAGS} --gfn "${GFN_VERSION}" --chrg "${CHARGE}" \
+    > "${LOG_DIR}/${XTB_LOG_NAME}" 2>&1
+
+if [[ "${SP_ONLY}" == "true" ]]; then
+  echo "      single-point complete; skipping geometry write-back"
+  grep -E "TOTAL ENERGY|HOMO-LUMO GAP" "${LOG_DIR}/${XTB_LOG_NAME}" | tail -5 || true
+  echo "XTB_SP_OK" > "${XTB_DIR}/xtb_sp_ok.stamp"
+  echo "\$(date -Iseconds)" >> "${XTB_DIR}/xtb_sp_ok.stamp"
+  echo "gfn=${GFN_VERSION} charge=${CHARGE} job=\$SLURM_JOB_ID" >> "${XTB_DIR}/xtb_sp_ok.stamp"
+  cp "${LOG_DIR}/${XTB_LOG_NAME}" "${XTB_DIR}/" 2>/dev/null || true
+  rm -rf "\$WORKDIR"
+  exit 0
+fi
 
 if [[ ! -f xtbopt.coord ]]; then
   echo "ERROR: xtb did not produce xtbopt.coord" >&2
@@ -311,8 +352,8 @@ fi
 cp xtbopt.coord "${XTB_DIR}/coord_optimized"
 cp xtbopt.log "${XTB_DIR}/" 2>/dev/null || true
 
-FINAL_E=\$(grep "TOTAL ENERGY" "${LOG_DIR}/xtb_opt.log" | tail -1 | awk '{print \$4}')
-N_CYCLES=\$(grep -c "GEOMETRY OPTIMIZATION CYCLE" "${LOG_DIR}/xtb_opt.log" 2>/dev/null || echo "?")
+FINAL_E=\$(grep "TOTAL ENERGY" "${LOG_DIR}/${XTB_LOG_NAME}" | tail -1 | awk '{print \$4}')
+N_CYCLES=\$(grep -c "GEOMETRY OPTIMIZATION CYCLE" "${LOG_DIR}/${XTB_LOG_NAME}" 2>/dev/null || echo "?")
 
 echo "XTB_PREOPT_OK" > "${XTB_DIR}/xtb_ok.stamp"
 echo "\$(date -Iseconds)" >> "${XTB_DIR}/xtb_ok.stamp"
