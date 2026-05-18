@@ -15,10 +15,21 @@
 # Options:
 #   --gfn N              GFN version: 0, 1, or 2 (default: 2)
 #   --opt-level LEVEL    Optimization level: crude, sloppy, loose, lax,
-#                        normal, tight, vtight, extreme (default: tight)
+#                        normal, tight, vtight, extreme (default: tight).
+#                        Note: Schmitz et al. JPCB 2020 (the canonical
+#                        "GFN2-xTB on proteins" paper) use `loose` for
+#                        all proteins, which is enough for DFT pre-opt.
 #   --sp                 Single-point energy only (no geometry opt). Use this
 #                        as a diagnostic: confirms xtb runs at all on the
 #                        molecule before committing to a long opt run.
+#   --solvent NAME       Implicit GBSA solvent (e.g. h2o, methanol, dmso).
+#                        Default: none (vacuum). For charged proteins, use
+#                        --solvent h2o — strongly stabilizes the SCC and is
+#                        the recipe used in Schmitz et al. 2020 (JPCB).
+#   --threads N          OMP thread count override. Default: $SLURM_CPUS_PER_TASK.
+#                        xtb's SCC parallelization is fragile above ~8-16
+#                        threads on large systems; cap at 4-8 for proteins
+#                        >1000 atoms (matches Schmitz et al. recipe).
 #   --slurm              Submit as a SLURM job instead of running locally
 #   --partition NAME     SLURM partition (default: from config.sh)
 #   --cpus N             CPU count (default: 16)
@@ -40,6 +51,11 @@
 #   # Diagnostic SP on lysozyme (confirms xtb + memory are OK before opt)
 #   scripts/xtb_preopt.sh lysozyme --sp --slurm --partition bigmem \
 #       --cpus 36 --mem 500G --time 01:00:00
+#
+#   # Full Schmitz et al. 2020 protein recipe (GBSA water + 4 OMP threads)
+#   scripts/xtb_preopt.sh lysozyme --slurm --partition bigmem \
+#       --cpus 36 --mem 0 --time 72:00:00 \
+#       --gfn 2 --opt-level loose --solvent h2o --threads 4
 # -----------------------------------------------------------------------------
 
 set -euo pipefail
@@ -54,6 +70,8 @@ MOLECULE=""
 GFN_VERSION=2
 OPT_LEVEL="tight"
 SP_ONLY=false
+SOLVENT=""
+OVR_THREADS=""
 USE_SLURM=false
 OVR_PARTITION=""
 OVR_CPUS="16"
@@ -65,6 +83,8 @@ while [[ $# -gt 0 ]]; do
     --gfn)        GFN_VERSION="$2"; shift 2 ;;
     --opt-level)  OPT_LEVEL="$2"; shift 2 ;;
     --sp)         SP_ONLY=true; shift ;;
+    --solvent)    SOLVENT="$2"; shift 2 ;;
+    --threads)    OVR_THREADS="$2"; shift 2 ;;
     --slurm)      USE_SLURM=true; shift ;;
     --partition)  OVR_PARTITION="$2"; shift 2 ;;
     --cpus)       OVR_CPUS="$2"; shift 2 ;;
@@ -235,7 +255,13 @@ else
   XTB_LOG_NAME="xtb_opt.log"
   XTB_MODE_DESC="Pre-Optimization"
 fi
-export SP_ONLY XTB_FLAGS XTB_LOG_NAME XTB_MODE_DESC
+
+# Append implicit solvation (Schmitz et al. 2020 recipe: GBSA water for proteins)
+if [[ -n "$SOLVENT" ]]; then
+  XTB_FLAGS="$XTB_FLAGS --gbsa $SOLVENT"
+fi
+
+export SP_ONLY XTB_FLAGS XTB_LOG_NAME XTB_MODE_DESC SOLVENT OVR_THREADS
 
 # ==============================================================================
 # SLURM mode
@@ -274,6 +300,17 @@ module load xtb/6.7.1-gfbf-2024a
 # Sanity-check which xtb we're actually about to run
 echo "xtb resolved to: \$(which xtb)"
 xtb --version 2>&1 | head -3 || true
+
+# OMP threads — override SLURM_CPUS_PER_TASK if --threads was passed.
+# xtb's SCC parallelization is fragile above ~8-16 threads on large
+# systems (Schmitz et al. 2020 used only 4 cores for proteins up to
+# 5000 atoms). The full SLURM allocation is still useful for memory
+# bandwidth, but the threads xtb actually spawns can be capped.
+if [[ -n "${OVR_THREADS}" ]]; then
+  export OMP_NUM_THREADS=${OVR_THREADS}
+  export MKL_NUM_THREADS=${OVR_THREADS}
+  echo "OMP_NUM_THREADS capped at: \$OMP_NUM_THREADS (SLURM allocated \$SLURM_CPUS_PER_TASK)"
+fi
 
 # Lift the stack size limit — xtb's recursive integral evaluator
 # segfaults at the default 8 MB stack for systems >~1500 atoms.
