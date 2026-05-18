@@ -245,6 +245,10 @@ export TURBOMOLE_SYSNAME=${TURBOMOLE_SYSNAME}
 export PATH=${TURBOMOLE_ROOT}/bin/${TURBOMOLE_SYSNAME}:${TURBOMOLE_ROOT}/scripts:\$PATH
 export OMP_NUM_THREADS=\$SLURM_CPUS_PER_TASK
 
+# Lift the stack size limit — xtb's recursive integral evaluator
+# segfaults at the default 8 MB stack for systems >~1500 atoms.
+ulimit -s unlimited
+
 WORKDIR=\$VSC_SCRATCH/${MOLECULE}-xtb-\$SLURM_JOB_ID
 mkdir -p "\$WORKDIR"
 
@@ -258,6 +262,7 @@ echo "  GFN:       ${GFN_VERSION}"
 echo "  Opt level: ${OPT_LEVEL}"
 echo "  Node:      \$(hostname)"
 echo "  CPUs:      \$SLURM_CPUS_PER_TASK"
+echo "  Stack:     \$(ulimit -s)"
 echo
 
 echo "[1/3] x2t: ${MOLECULE}.xyz -> coord"
