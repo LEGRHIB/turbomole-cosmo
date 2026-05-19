@@ -55,3 +55,9 @@ Thumbs.db
 
 # === Audit reports (local-only; agent writes them per-run) ===
 .claude/audit-reports/
+
+# Audit additions 2026-05-19
+.claude/
+docs/*.pdf
+**/_archive-*/
+**/propka/
