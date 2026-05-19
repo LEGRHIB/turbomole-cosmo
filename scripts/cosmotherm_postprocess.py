@@ -692,6 +692,16 @@ def write_mixtures_xlsx(
     return True
 
 
+def _lookup_pure_xrs(pure_rows: list[dict], solvent_name: str) -> float | None:
+    """Find log10(x_RS) for a given solvent name in the pure-screen rows."""
+    if not solvent_name:
+        return None
+    for r in pure_rows:
+        if r.get('Solvent', '').strip() == solvent_name.strip():
+            return _to_float(r.get('log10(x_RS)'))
+    return None
+
+
 def write_combined_ranking_xlsx(
     out_path: Path,
     pure_rows: list[dict],
@@ -700,11 +710,24 @@ def write_combined_ranking_xlsx(
 ) -> bool:
     """Unified pure+mix ranking, single sheet, one row per system.
 
-    Brings the pure-screen 'log10(x_RS)' values onto the same scale as the
+    Brings pure-screen 'log10(x_RS)' values onto the same scale as the
     mixture-screen 'log10(x_solub)' values by subtracting DG_fus/(RT·ln 10).
-    DG_fus is harvested from any mixture's solute self-row. If no mixture is
-    available (no DG_fus to subtract), the pure rows show 'log10(x_RS)' as-is
-    and the ranking is pure-only.
+    DG_fus is harvested from any mixture's solute self-row.
+
+    For each MIXTURE row, four extra columns make the chemistry instantly
+    readable:
+      - pure_baseline_max : DG_fus-corrected log10(x_solub) of the more
+                            soluble pure component.
+      - pure_baseline_min : same for the less soluble pure component.
+      - mix_within_range  : True iff the mix value lies between the two
+                            pure-component baselines (the "classical"
+                            interpolation behavior).
+      - delta_vs_best_pure: mix − pure_baseline_max. Negative = mixture is
+                            LESS soluble than either pure (anti-solvent
+                            effect, useful for crystallization). Positive =
+                            mixture is MORE soluble than the best pure
+                            (co-solvent synergy, useful for dissolution).
+    Pure rows leave these four columns blank.
     """
     if not HAS_OPENPYXL:
         return False
@@ -718,6 +741,7 @@ def write_combined_ranking_xlsx(
     grey = PatternFill("solid", fgColor="EEEEEE")
 
     dg_fus = _harvest_dg_fus(mixtures) if mixtures else None
+    shift = dg_fus / RT_LN10_KCAL_AT_298K if dg_fus is not None else 0.0
 
     combined: list[dict] = []
 
@@ -726,14 +750,8 @@ def write_combined_ranking_xlsx(
         x_rs = _to_float(r.get('log10(x_RS)'))
         w_rs = _to_float(r.get('w_RS'))
         s_rs = _to_float(r.get('log10(S_RS)'))
-        if dg_fus is not None and x_rs is not None:
-            x_solub_est = x_rs - dg_fus / RT_LN10_KCAL_AT_298K
-        else:
-            x_solub_est = x_rs  # No correction available — use x_RS raw
-        if dg_fus is not None and s_rs is not None:
-            s_est = s_rs - dg_fus / RT_LN10_KCAL_AT_298K
-        else:
-            s_est = s_rs
+        x_solub_est = x_rs - shift if (dg_fus is not None and x_rs is not None) else x_rs
+        s_est = s_rs - shift if (dg_fus is not None and s_rs is not None) else s_rs
 
         combined.append({
             'system': r.get('Solvent', ''),
@@ -744,20 +762,49 @@ def write_combined_ranking_xlsx(
             'log10(S)': s_est,
             'diverged': bool(r.get('_diverged')),
             'source': 'pure-screen x_RS (DG_fus-corrected)' if dg_fus is not None else 'pure-screen x_RS (raw)',
+            'pure_baseline_max': None,
+            'pure_baseline_min': None,
+            'mix_within_range': None,
+            'delta_vs_best_pure': None,
         })
 
     # Mixtures — pick the primary solubility number per mixture
     for label, (_, _, rows) in mixtures.items():
         s = _build_mix_summary(label, rows)
+        mix_val = s.get('log10(x_solub)_primary')
+
+        # Look up each component's DG_fus-corrected pure-solvent solubility
+        sol1_xrs = _lookup_pure_xrs(pure_rows, s.get('sol1', ''))
+        sol2_xrs = _lookup_pure_xrs(pure_rows, s.get('sol2', ''))
+        sol1_est = sol1_xrs - shift if (sol1_xrs is not None and dg_fus is not None) else sol1_xrs
+        sol2_est = sol2_xrs - shift if (sol2_xrs is not None and dg_fus is not None) else sol2_xrs
+
+        if sol1_est is not None and sol2_est is not None:
+            pure_max = max(sol1_est, sol2_est)
+            pure_min = min(sol1_est, sol2_est)
+        else:
+            pure_max = sol1_est if sol1_est is not None else sol2_est
+            pure_min = pure_max
+
+        within_range = None
+        delta = None
+        if mix_val is not None and pure_max is not None and pure_min is not None:
+            within_range = (pure_min - 1e-9) <= mix_val <= (pure_max + 1e-9)
+            delta = mix_val - pure_max
+
         combined.append({
             'system': s['mixture'],
             'type': 'mixture',
             'composition': s['composition'],
-            'log10(x_solub)': s.get('log10(x_solub)_primary'),
+            'log10(x_solub)': mix_val,
             'w_solub': s.get('w_solub_primary'),
             'log10(S)': s.get('log10(S)_primary'),
             'diverged': s.get('iter_diverged', False),
             'source': f"mixture {s.get('primary_source', 'iterative')}",
+            'pure_baseline_max': pure_max,
+            'pure_baseline_min': pure_min,
+            'mix_within_range': within_range,
+            'delta_vs_best_pure': delta,
         })
 
     # Sort descending by log10(x_solub) — None goes last
@@ -771,9 +818,9 @@ def write_combined_ranking_xlsx(
         note = (
             f"Pure and mixture solubilities on same log10(x_solub) scale via DG_fus "
             f"correction.  DG_fus = {dg_fus:.4f} kcal/mol;  RT·ln10 (298.15 K) = "
-            f"{RT_LN10_KCAL_AT_298K:.4f} kcal/mol;  shift = "
-            f"{dg_fus / RT_LN10_KCAL_AT_298K:.3f} log units.  Pure x_RS minus this "
-            f"shift; mixture iterative-or-pr_ni as-is (see 'source' column)."
+            f"{RT_LN10_KCAL_AT_298K:.4f} kcal/mol;  shift = {shift:.3f} log units.  "
+            f"Pure x_RS minus this shift; mixture values direct from screen.  "
+            f"delta_vs_best_pure < 0 → anti-solvent effect; > 0 → co-solvent synergy."
         )
     else:
         note = (
@@ -781,10 +828,15 @@ def write_combined_ranking_xlsx(
             "as-is; not on the same scale as mixture values."
         )
     ws.cell(row=1, column=1, value=note).font = italic
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=9)
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=13)
 
-    headers = ['rank', 'system', 'type', 'composition',
-               'log10(x_solub)', 'w_solub', 'log10(S)', 'diverged', 'source']
+    headers = [
+        'rank', 'system', 'type', 'composition',
+        'log10(x_solub)', 'w_solub', 'log10(S)',
+        'pure_baseline_max', 'pure_baseline_min',
+        'mix_within_range', 'delta_vs_best_pure',
+        'diverged', 'source',
+    ]
     header_row = 3
     for ci, h in enumerate(headers, 1):
         c = ws.cell(row=header_row, column=ci, value=h)
@@ -799,8 +851,12 @@ def write_combined_ranking_xlsx(
         ws.cell(row=header_row + i, column=5, value=row['log10(x_solub)'])
         ws.cell(row=header_row + i, column=6, value=row['w_solub'])
         ws.cell(row=header_row + i, column=7, value=row['log10(S)'])
-        ws.cell(row=header_row + i, column=8, value=row['diverged'])
-        ws.cell(row=header_row + i, column=9, value=row['source'])
+        ws.cell(row=header_row + i, column=8, value=row['pure_baseline_max'])
+        ws.cell(row=header_row + i, column=9, value=row['pure_baseline_min'])
+        ws.cell(row=header_row + i, column=10, value=row['mix_within_range'])
+        ws.cell(row=header_row + i, column=11, value=row['delta_vs_best_pure'])
+        ws.cell(row=header_row + i, column=12, value=row['diverged'])
+        ws.cell(row=header_row + i, column=13, value=row['source'])
 
     for ci, h in enumerate(headers, 1):
         ws.column_dimensions[chr(ord('A') + ci - 1)].width = max(len(h) + 2, 14)

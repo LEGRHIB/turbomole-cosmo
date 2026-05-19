@@ -11,7 +11,11 @@ f="__MOLECULE__.cosmo" autoc                                             # Solut
 f="h2o_c0.cosmo" autoc                                                   # Water reference (compound 2, QSPR aux)
 f="__SOLVENT1___c0.cosmo" autoc                                          # Mixture solvent 1 (compound 3)
 f="__SOLVENT2___c0.cosmo" autoc                                          # Mixture solvent 2 (compound 4)
-tc=25.0 solub xs={0.0 0.0 __X_SOLVENT1__ __X_SOLVENT2__} force_qspr iterative pr_ni xsolout_x_log10 wsolout_gg lsolout_moll_log10
-# pr_ni: also print the non-iterative (zero-order guess) solubility. Useful when
-# 'iterative' converges to log10(x_solub)=0 (miscibility) for poorly-soluble
-# solutes — pr_ni gives a finite chemical-potential-based estimate alongside.
+tc=25.0 solub xs={0.0 0.0 __X_SOLVENT1__ __X_SOLVENT2__} force_qspr SLESOL xsolout_x_log10 wsolout_gg lsolout_moll_log10
+# SLESOL: solve solid-liquid equilibrium (SLE) using DG_fus directly. Manual
+# p.113: for high-DG_fus solid solutes the 'iterative' option collapses to
+# log10(x_solub)=0 (the miscibility floor), and 'pr_ni' inherits the same
+# clipped chemical potentials — both useless for ranking. SLESOL is the
+# COSMOtherm-recommended alternative and produces finite log10(x_solub)
+# values directly in the same output column.
+# To revert to iterative: replace `SLESOL` with `iterative pr_ni`.
