@@ -241,6 +241,12 @@ def main():
 
     if not args.pdb.exists():
         sys.exit(f"ERROR: {args.pdb} not found")
+    # Resolve to an absolute path now so that the subprocess cwd= we set
+    # later (the propka subdir) doesn't re-interpret a relative path. If
+    # pdb2pqr can't find the file locally, it falls back to treating the
+    # argument as a 4-letter PDB ID and tries to download it from RCSB —
+    # which produces a 404 and a confusing error message.
+    args.pdb = args.pdb.resolve()
 
     mol_name = args.molecule or args.pdb.stem.replace("_clean", "").replace("_pH4.5", "")
     out_name = args.output_name or mol_name
