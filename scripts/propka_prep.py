@@ -134,12 +134,23 @@ def run_propka_standalone(pdb_in, workdir):
     return pka_files[-1] if pka_files else None
 
 
-def guess_element(atom_name):
-    """Map a PDB atom name (e.g. 'CA', 'NZ', 'HD12', 'FE') to an element
-    symbol. PDB convention: element symbol is in the first 2 chars,
-    right-padded; first letter is uppercase, second (if present) lowercase
-    for two-letter elements. Heuristic suffices for proteins + common
-    ligand elements."""
+def guess_element(atom_name, record_type="ATOM"):
+    """Map a PDB atom name to an element symbol.
+
+    For ATOM records (standard amino acids), the element is ALWAYS just
+    the first letter of the atom name. Protein residue atoms use names
+    like CA (alpha-C), CB (beta-C), CD/CD1/CD2 (delta-C), CE, CG, CH,
+    CZ, NE, NZ, ND, OD, OE, OG, OH, SG, SD — the first letter is the
+    element (H/C/N/O/S/P), the second character is a positional label
+    that has NOTHING to do with the periodic table. Reading 'CA' as
+    calcium or 'CD' as cadmium silently corrupts protein xyz output
+    and causes downstream tools (xtb, TURBOMOLE) to fragment the
+    structure on wrong covalent radii.
+
+    For HETATM records (cofactors, ligands, metal centers, ions), 2-
+    letter elements like Ca, Cd, Cl, Fe, Zn, Mg, etc. are legitimate
+    and the 2-letter-prefix check applies.
+    """
     stripped = atom_name.strip().upper()
     if not stripped:
         return "X"
@@ -147,22 +158,36 @@ def guess_element(atom_name):
     stripped = re.sub(r"^\d+", "", stripped)
     if not stripped:
         return "X"
-    # Hydrogens always start with H
+    # Hydrogens always start with H regardless of record type
     if stripped[0] == "H":
         return "H"
-    # Two-letter elements (metals + halogens + Si/Se/As/etc.)
+    # For standard-residue ATOM records, the first letter IS the element.
+    # Skip the 2-letter lookup that would mis-tag CA/CD/etc.
+    if record_type == "ATOM":
+        return stripped[0]
+    # For HETATM records, 2-letter metals/halogens/etc. are legitimate.
     if len(stripped) >= 2 and stripped[:2] in TWO_LETTER_ELEMENTS:
         return stripped[0] + stripped[1].lower()
     return stripped[0]
 
 
 def parse_pqr(pqr_path):
-    """Read a PQR file. Returns (list of (element, x, y, z), float total_q)."""
+    """Read a PQR file. Returns (list of (element, x, y, z), float total_q).
+
+    Distinguishes ATOM (standard residues — first-letter element only)
+    from HETATM (cofactors/ligands — full 2-letter element detection)
+    so atom names like CA/CD/CD1/CD2 in a protein context are correctly
+    interpreted as carbon, not calcium/cadmium.
+    """
     atoms = []
     total_q = 0.0
     with open(pqr_path) as fh:
         for line in fh:
-            if not (line.startswith("ATOM") or line.startswith("HETATM")):
+            if line.startswith("ATOM"):
+                record_type = "ATOM"
+            elif line.startswith("HETATM"):
+                record_type = "HETATM"
+            else:
                 continue
             # PQR is whitespace-separated past the residue columns. We
             # rely on negative indexing because radius is always the last
@@ -179,7 +204,7 @@ def parse_pqr(pqr_path):
             except ValueError:
                 continue
             atom_name = parts[2]
-            elem = guess_element(atom_name)
+            elem = guess_element(atom_name, record_type)
             atoms.append((elem, x, y, z))
             total_q += q
     return atoms, total_q
