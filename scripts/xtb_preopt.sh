@@ -339,7 +339,17 @@ fi
 
 # Lift the stack size limit — xtb's recursive integral evaluator
 # segfaults at the default 8 MB stack for systems >~1500 atoms.
+# ulimit -s unlimited only lifts the MAIN thread's stack; libgomp /
+# iomp5 allocate separate 4 MB per-OMP-thread stacks. The L-ANC
+# optimizer keeps its Hessian working set on those per-thread stacks
+# and segfaults inside L-ANC setup on >~1500-atom systems unless
+# OMP_STACKSIZE is also raised (~1 GB per 1000 atoms is enough).
+# Verified 2026-05-21 on lysozyme (1963 atoms, +11, GFN-FF + GBSA h2o)
+# against jobs 66864930 (6.6.1-intel-2021a, SR), 66864931 (6.7.1-gfbf-2024a, SR):
+# both survived L-ANC with OMP_STACKSIZE=4000m + OMP_NUM_THREADS=4
+# (cf. 66860253 same molecule, no OMP_STACKSIZE: SIGSEGV in 27 s).
 ulimit -s unlimited
+export OMP_STACKSIZE=4000m
 
 WORKDIR=\$VSC_SCRATCH/${MOLECULE}-xtb-\$SLURM_JOB_ID
 mkdir -p "\$WORKDIR"

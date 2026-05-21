@@ -80,7 +80,8 @@ echo "xtb exit code: $XTB_RC"
 if [[ -f xtbopt.coord ]]; then
   echo "RESULT: L-ANC SURVIVED  (xtbopt.coord written, $(wc -l < xtbopt.coord) lines)"
   ls -la xtbopt.coord
+  exit 0
 else
   echo "RESULT: L-ANC STILL CRASHES  (no xtbopt.coord produced)"
-  echo "--- Last 30 lines of xtb output (if any captured by SLURM) ---"
+  exit ${XTB_RC:-99}
 fi
