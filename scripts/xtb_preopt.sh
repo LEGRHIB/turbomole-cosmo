@@ -13,7 +13,13 @@
 #   scripts/xtb_preopt.sh <molecule> [options]
 #
 # Options:
-#   --gfn N              GFN version: 0, 1, or 2 (default: 2)
+#   --gfn N              GFN version: 0, 1, 2, or ff (default: 2). The
+#                        ff variant uses GFN-FF (force field), which has
+#                        no SCC/SCF iteration — useful as a universal
+#                        fallback when SCC-based methods segfault or
+#                        diverge on a particular structure. GFN-FF
+#                        produces less accurate geometries than GFN2
+#                        but never fails to converge.
 #   --opt-level LEVEL    Optimization level: crude, sloppy, loose, lax,
 #                        normal, tight, vtight, extreme (default: tight).
 #                        Note: Schmitz et al. JPCB 2020 (the canonical
@@ -56,6 +62,11 @@
 #   scripts/xtb_preopt.sh lysozyme --slurm --partition bigmem \
 #       --cpus 36 --mem 0 --time 72:00:00 \
 #       --gfn 2 --opt-level loose --solvent h2o --threads 4
+#
+#   # GFN-FF fallback (no SCC, always converges) — for when GFN2/GFN1
+#   # segfault or diverge on a particular structure
+#   scripts/xtb_preopt.sh lysozyme --sp --slurm --partition batch_sapphirerapids \
+#       --cpus 48 --mem 0 --time 72:00:00 --gfn ff --solvent h2o --threads 4
 # -----------------------------------------------------------------------------
 
 set -euo pipefail
@@ -168,8 +179,8 @@ run_xtb_opt() {
   echo "      coord ok ($(wc -l < coord) lines)"
 
   # Step 2: Run xTB geometry optimization
-  echo "[2/3] xtb --opt $OPT_LEVEL --gfn $GFN_VERSION --chrg $CHARGE"
-  if ! xtb coord --opt "$OPT_LEVEL" --gfn "$GFN_VERSION" --chrg "$CHARGE" \
+  echo "[2/3] xtb --opt $OPT_LEVEL $GFN_FLAG --chrg $CHARGE"
+  if ! xtb coord --opt "$OPT_LEVEL" $GFN_FLAG --chrg "$CHARGE" \
        > "$LOG_DIR/xtb_opt.log" 2>&1; then
     echo "ERROR: xtb exited non-zero. See $LOG_DIR/xtb_opt.log" >&2
     tail -n 30 "$LOG_DIR/xtb_opt.log" >&2
@@ -261,7 +272,18 @@ if [[ -n "$SOLVENT" ]]; then
   XTB_FLAGS="$XTB_FLAGS --gbsa $SOLVENT"
 fi
 
-export SP_ONLY XTB_FLAGS XTB_LOG_NAME XTB_MODE_DESC SOLVENT OVR_THREADS
+# Map GFN version to the xtb CLI flag. The "ff" pseudo-version selects
+# GFN-FF (force field), which uses --gfnff (no value); integer versions
+# 0/1/2 use --gfn N. GFN-FF has no SCC iteration so it's the universal
+# fallback when SCC-based methods segfault or diverge on a given
+# structure — it always converges, at the cost of lower accuracy.
+if [[ "$GFN_VERSION" == "ff" ]]; then
+  GFN_FLAG="--gfnff"
+else
+  GFN_FLAG="--gfn $GFN_VERSION"
+fi
+
+export SP_ONLY XTB_FLAGS XTB_LOG_NAME XTB_MODE_DESC SOLVENT OVR_THREADS GFN_FLAG
 
 # ==============================================================================
 # SLURM mode
@@ -346,9 +368,9 @@ x2t "${MOL_DIR}/${MOLECULE}.xyz" > coord
 JOB_TAG="gfn${GFN_VERSION}-\$SLURM_JOB_ID"
 XTB_LOG="${LOG_DIR}/${XTB_LOG_NAME%.log}-\${JOB_TAG}.log"
 
-echo "[2/3] xtb ${XTB_FLAGS} --gfn ${GFN_VERSION} --chrg ${CHARGE}"
+echo "[2/3] xtb ${XTB_FLAGS} ${GFN_FLAG} --chrg ${CHARGE}"
 echo "      log -> \$XTB_LOG"
-xtb coord ${XTB_FLAGS} --gfn "${GFN_VERSION}" --chrg "${CHARGE}" \
+xtb coord ${XTB_FLAGS} ${GFN_FLAG} --chrg "${CHARGE}" \
     > "\$XTB_LOG" 2>&1
 
 if [[ "${SP_ONLY}" == "true" ]]; then
