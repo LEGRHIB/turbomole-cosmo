@@ -1,0 +1,47 @@
+#!/bin/bash -l
+#SBATCH --clusters=__CLUSTER__
+#SBATCH --partition=__PARTITION__
+#SBATCH --account=__ACCOUNT__
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=__CPUS__
+#SBATCH --time=__TIME__
+#SBATCH --mem=__MEM__
+#SBATCH --job-name=__MOLECULE__-cosmo-fine
+#SBATCH --output=__INDIR__/scf-cosmo.out
+#SBATCH --error=__INDIR__/scf-cosmo.err
+
+set -euo pipefail
+
+INDIR=__INDIR__
+# Use node-local SSD (~960 GB on Wice bigmem) for SCF intermediates.
+# Avoids VSC_SCRATCH quota (500 GB) and Lustre latency. Cleaned up
+# automatically when the job ends.
+LOCAL_SCRATCH="${TMPDIR:-/tmp}"
+WORKDIR="$LOCAL_SCRATCH/__MOLECULE__-ridft-$SLURM_JOB_ID"
+mkdir -p "$WORKDIR"
+echo "Workdir:    $WORKDIR (node-local SSD)"
+echo "Free space: $(df -h "$LOCAL_SCRATCH" | awk 'NR==2{print $4}')"
+cd "$WORKDIR"
+
+source __TURBOMOLE_ROOT__/vars
+export PARA_ARCH=SMP
+export TURBOMOLE_SYSNAME=__SYSNAME__
+export PATH=__TURBOMOLE_ROOT__/bin/$TURBOMOLE_SYSNAME:__TURBOMOLE_ROOT__/scripts:$PATH
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+
+# Stage inputs (auxbasis needed for RI-J)
+for f in control coord basis mos auxbasis; do
+  [[ -f "$INDIR/$f" ]] && cp -a "$INDIR/$f" ./
+done
+
+# BP-TZVPD-FINE uses ridft (RI-DFT), not dscf
+ridft > ridft.out
+
+echo "Run finished. Files created:"
+ls -lah
+
+cp -a ridft.out "$INDIR"/
+cp -a *.cosmo *.ccf "$INDIR"/ 2>/dev/null || true
+# Save converged orbitals + energy + final control for restarts/analysis
+cp -a mos energy statistics control "$INDIR"/ 2>/dev/null || true
