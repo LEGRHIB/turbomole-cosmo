@@ -1,9 +1,10 @@
 #!/bin/bash
 # _tune_scf.sh — Apply protocol-specific SCF tuning to control file in cwd.
 #
-# For BP-TZVPD-* | BP-SVP-FINE | BP-SVP-FINE-ANNEAL protocols, replaces the
-# default scfiterlimit / scfdamp / scforbitalshift lines in `control` with
-# values tuned for difficult convergence on large molecules:
+# For BP-TZVPD-* | BP-SVP-FINE | BP-SVP-FINE-ANNEAL | BP-TZVPD-FINE-ANNEAL
+# protocols, replaces the default scfiterlimit / scfdamp / scforbitalshift
+# lines in `control` with values tuned for difficult convergence on large
+# molecules:
 #   $scfiterlimit      300
 #   $scfdamp   start=0.700  step=0.050  min=0.050
 #   $scforbitalshift  automatic=.3
@@ -11,13 +12,16 @@
 # with metallic-character HOMO/LUMO gaps (e.g. large peptides/proteins).
 # The $fermi block flavor depends on the protocol:
 #
-#   - default (BP-TZVPD-*, BP-SVP-FINE):
+#   - default (BP-TZVPD-FINE, BP-TZVPD-OPT, BP-SVP-FINE):
 #       $fermi tmstrt=300 tmend=300 tmfac=1.0 hlcrt=1.0e-3 stop=1.0e-3
 #     Constant 300 K Fermi smearing. Activates only if HOMO/LUMO gap < 1 mHa.
 #
-#   - BP-SVP-FINE-ANNEAL (annealed schedule for systems where the gap
-#     fluctuates around kT(300 K) ≈ 1 mHa — Fermi window keeps switching
-#     between "sees the gap" and "sees through it", stalling convergence):
+#   - *FINE-ANNEAL (BP-SVP-FINE-ANNEAL, BP-TZVPD-FINE-ANNEAL): annealed
+#     schedule for systems where the gap fluctuates around kT(300 K) ≈ 1 mHa
+#     — Fermi window keeps switching between "sees the gap" and "sees
+#     through it", losing the bracket, COSMO cavity construction
+#     fragments, and the SCF diverges (~+200k Eh blowup) — observed on
+#     lysozyme +11 at BP-TZVPD-FINE in jobs 66867524 / 66871359 (2026-05-22):
 #       $fermi tmstrt=2000 tmend=300 tmfac=0.95 hlcrt=1.0e-3 stop=1.0e-3
 #     Start at 2000 K (kT ≈ 6 mHa — wide enough to smooth a 2-30 mHa gap
 #     fluctuation), anneal back to 300 K at 5% per SCF cycle.
@@ -59,7 +63,15 @@ case "$PROTOCOL" in
     echo "  tuned SCF applied: scfiterlimit=300, scfdamp 0.700/0.050/0.050, scforbitalshift=.3"
 
     # Pick the $fermi flavor based on protocol.
-    if [[ "$PROTOCOL" == "BP-SVP-FINE-ANNEAL" ]]; then
+    # Any *FINE-ANNEAL variant (BP-SVP-FINE-ANNEAL, BP-TZVPD-FINE-ANNEAL, ...)
+    # uses the annealed 2000K -> 300K schedule. Empirically required for
+    # highly-charged proteins where the HOMO/LUMO gap fluctuates around
+    # kT(300 K) ≈ 1 mHa: a constant 300 K Fermi window keeps losing the
+    # bracket, the system enters a Fermi-recovery loop, COSMO cavities
+    # fracture, and the SCF diverges around cycle 6-25 with +200k Eh
+    # energy blowups (observed on lysozyme +11 at BP-TZVPD-FINE in
+    # jobs 66867524 / 66871359, 2026-05-22).
+    if [[ "$PROTOCOL" == *FINE-ANNEAL ]]; then
       FERMI_LINE='$fermi tmstrt=2000 tmend=300 tmfac=0.95 hlcrt=1.0e-3 stop=1.0e-3'
       FERMI_DESC="annealed Fermi (2000 K -> 300 K, factor 0.95/cycle)"
     else
