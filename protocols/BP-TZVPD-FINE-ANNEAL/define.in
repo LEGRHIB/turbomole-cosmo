@@ -1,0 +1,23 @@
+
+
+a coord
+*
+no
+b all def2-TZVPD
+*
+eht
+y
+__CHARGE__
+y
+y
+dft
+on
+func b-p
+grid m4
+*
+ri
+on
+m 1000
+*
+*
+q
