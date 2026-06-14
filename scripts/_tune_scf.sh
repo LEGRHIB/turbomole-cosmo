@@ -71,7 +71,7 @@ case "$PROTOCOL" in
     # fracture, and the SCF diverges around cycle 6-25 with +200k Eh
     # energy blowups (observed on lysozyme +11 at BP-TZVPD-FINE in
     # jobs 66867524 / 66871359, 2026-05-22).
-    if [[ "$PROTOCOL" == *FINE-ANNEAL ]]; then
+    if [[ "$PROTOCOL" == *FINE-ANNEAL* ]]; then
       FERMI_LINE='$fermi tmstrt=2000 tmend=300 tmfac=0.95 hlcrt=1.0e-3 stop=1.0e-3'
       FERMI_DESC="annealed Fermi (2000 K -> 300 K, factor 0.95/cycle)"
     else
