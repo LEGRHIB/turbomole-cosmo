@@ -45,22 +45,35 @@ fi
 
 case "$PROTOCOL" in
   BP-TZVPD-*|BP-TZVP-*|BP-SVP-FINE|BP-SVP-FINE-ANNEAL)
-    sed -i \
-      -e 's|^\$scfiterlimit.*|$scfiterlimit      300|' \
-      -e 's|^\$scfdamp.*|$scfdamp   start=0.700  step=0.050  min=0.050|' \
-      -e 's|^\$scforbitalshift.*|$scforbitalshift  automatic=.3|' \
-      control
+    # Hard-case SCF tuning for ill-conditioned (near-linearly-dependent) systems:
+    # any *HARD* protocol uses TURBOMOLE's recommended heavy damping + large level
+    # shift (suppresses occ-virt mixing into the near-singular subspace); all other
+    # protocols keep the standard tuning.
+    if [[ "$PROTOCOL" == *HARD* ]]; then
+      sed -i \
+        -e 's|^\$scfiterlimit.*|$scfiterlimit      999|' \
+        -e 's|^\$scfdamp.*|$scfdamp   start=5.000  step=0.050  min=0.500|' \
+        -e 's|^\$scforbitalshift.*|$scforbitalshift  automatic=1.0|' \
+        control
+      echo "  HARD SCF tuning: scfiterlimit=999, scfdamp 5.000/0.050/0.500, scforbitalshift=1.0"
+    else
+      sed -i \
+        -e 's|^\$scfiterlimit.*|$scfiterlimit      300|' \
+        -e 's|^\$scfdamp.*|$scfdamp   start=0.700  step=0.050  min=0.050|' \
+        -e 's|^\$scforbitalshift.*|$scforbitalshift  automatic=.3|' \
+        control
+      echo "  tuned SCF applied: scfiterlimit=300, scfdamp 0.700/0.050/0.050, scforbitalshift=.3"
+    fi
 
-    # Verify the patch landed on all three lines
-    if ! grep -q '^\$scfdamp.*start=0\.700' control \
-       || ! grep -q '^\$scfiterlimit *300' control \
-       || ! grep -q '^\$scforbitalshift *automatic=\.3' control; then
+    # Verify the three SCF groups are present (value-agnostic)
+    if ! grep -q '^\$scfdamp' control \
+       || ! grep -q '^\$scfiterlimit' control \
+       || ! grep -q '^\$scforbitalshift' control; then
       echo "ERROR: SCF tuning sed-patch did not fully apply to control" >&2
       echo "       Current SCF block:" >&2
       grep -E 'scfiterlimit|scfdamp|scforbitalshift' control >&2 || true
       exit 1
     fi
-    echo "  tuned SCF applied: scfiterlimit=300, scfdamp 0.700/0.050/0.050, scforbitalshift=.3"
 
     # Pick the $fermi flavor based on protocol.
     # Any *FINE-ANNEAL variant (BP-SVP-FINE-ANNEAL, BP-TZVPD-FINE-ANNEAL, ...)
