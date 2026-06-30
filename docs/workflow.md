@@ -97,11 +97,15 @@ the SCF instead of cold-starting.
 
 - **Crystal / PDB** — clean first (drop waters, ions, alt-conformers; select chains), then protonate.
 - **2D / SDF** — OpenBabel 3D generation.
-- **AlphaFold** (no experimental structure, standard residues) — mmCIF → PDB → PROPKA →
-  xtb preopt → `.cosmo`. Gate on pLDDT; for high-confidence folds restrain the backbone and
-  only relax H/clashes in xtb. **Not** for non-standard / cross-linked / glycosylated solutes
-  (vancomycin-type → OpenBabel fallback). AF makes the *structure* free, not the *DFT* — a
-  protein-sized AF model inherits the large-protein bootstrap path.
+- **AlphaFold** (mmCIF) — `scripts/prepare_alphafold.py <model.cif> <mol> [--template <sdf>]`.
+  Parses per-residue pLDDT (confidence gate). AF only emits the 20 standard residues, so for
+  non-standard chemistry pass `--template`: the validated solute (right bonds/H, closed rings)
+  is bent onto the AF **Cα trace** — backbone matched N→C by a SMARTS walk (symmetry-free, no
+  MCS), Cα pinned, side chains + termini + H relaxed (constrained MMFF). bombesin: grafts the
+  N-terminal **pyroglutamate** lactam + **C-terminal amide** from `bombesin.sdf`, preserving
+  formula C₇₁H₁₁₀N₂₄O₁₈S / charge 0 — same molecule as the SDF prep, AF conformer. Then
+  xtb preopt → `.cosmo`, identical downstream. AF makes the *structure* free, not the *DFT* —
+  a protein-sized AF model still inherits the large-protein bootstrap path.
 
 ## Protonation
 
