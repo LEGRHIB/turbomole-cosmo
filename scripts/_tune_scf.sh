@@ -104,6 +104,19 @@ case "$PROTOCOL" in
     else
       echo "  Fermi smearing already present in control — leaving as-is"
     fi
+
+    # *SCFTOL* variants: tighten the integral-evaluation threshold. BIOVIA's
+    # recommendation for diffuse-function-driven SCF divergence — keeps the small
+    # long-range two-electron integrals that default screening discards, reducing
+    # the numerical noise that (with the near-singular overlap) blows up the SCF.
+    if [[ "$PROTOCOL" == *SCFTOL* ]]; then
+      if ! grep -q '^\$scftol' control; then
+        sed -i "/^\\\$end/i \$scftol 1d-15" control
+      fi
+      grep -q '^\$scftol' control \
+        && echo "  \$scftol 1d-15 added (tight integral threshold, per BIOVIA)" \
+        || { echo "ERROR: failed to add \$scftol to control" >&2; exit 1; }
+    fi
     ;;
   *)
     echo "  no SCF tuning for protocol $PROTOCOL"

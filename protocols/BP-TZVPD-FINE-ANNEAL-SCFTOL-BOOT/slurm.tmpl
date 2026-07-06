@@ -1,0 +1,140 @@
+#!/bin/bash -l
+#SBATCH --clusters=__CLUSTER__
+#SBATCH --partition=__PARTITION__
+#SBATCH --account=__ACCOUNT__
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=__CPUS__
+#SBATCH --time=__TIME__
+#SBATCH --mem=__MEM__
+#SBATCH --job-name=__MOLECULE__-cosmo-anneal
+#SBATCH --output=__INDIR__/scf-cosmo.out
+#SBATCH --error=__INDIR__/scf-cosmo.err
+# Deliver SIGTERM to THIS batch shell 600 s before the walltime cap so the
+# cleanup trap can stop ridft cleanly and copy a warm-restartable mos back to
+# INDIR before SLURM SIGKILLs the job.
+#SBATCH --signal=B:TERM@600
+
+# NOTE: intentionally NO `set -e` — we manage ridft's exit code by hand so the
+# script always reaches state-preservation even on a non-zero/diverged SCF.
+set -uo pipefail
+
+INDIR=__INDIR__
+# Use node-local SSD (~960 GB on Wice bigmem) for SCF intermediates.
+# Avoids VSC_SCRATCH quota (500 GB) and Lustre latency. Cleaned up
+# automatically when the job ends.
+LOCAL_SCRATCH="${TMPDIR:-/tmp}"
+WORKDIR="$LOCAL_SCRATCH/__MOLECULE__-ridft-$SLURM_JOB_ID"
+mkdir -p "$WORKDIR"
+echo "Workdir:    $WORKDIR (node-local SSD)"
+echo "Free space: $(df -h "$LOCAL_SCRATCH" | awk 'NR==2{print $4}')"
+echo "INDIR:      $INDIR"
+cd "$WORKDIR"
+
+# ---------------------------------------------------------------------------
+# Crash / timeout-safe state preservation.
+#
+# The previous template copied ridft.out + mos back only AFTER ridft exited 0,
+# so every failed or timed-out run lost its SCF trace and its restart point
+# with the node-local scratch dir (lysozyme 66867524 SIGTERM, 66871359 TIME
+# LIMIT both vanished this way). Now:
+#
+#   * save_trace() copies ridft.out (+ energy/statistics) — files we only ever
+#     READ, so they are safe to snapshot while ridft runs — every CKPT_EVERY
+#     seconds. Lets us watch convergence live and leaves a recent trace even
+#     after a hard SIGKILL.
+#   * cleanup() runs on normal EXIT and on the T-600 s SIGTERM. It stops ridft,
+#     waits for mos to go static, then saves mos/control/.cosmo + the trace.
+#     All copies are atomic (temp file + mv) so a half-written file never
+#     clobbers a good one in INDIR.
+#
+# Restart: resubmit WITHOUT re-running prep. The staging loop below picks up the
+# saved mos from INDIR and ridft warm-starts the SCF from it.
+# ---------------------------------------------------------------------------
+CKPT_EVERY=300          # ridft.out snapshot cadence (seconds)
+RIDFT_PID=""
+CKPT_PID=""
+
+# Atomically copy a file from cwd ($WORKDIR) into $INDIR.
+save_one() {
+  local f="$1"
+  [[ -f "$f" ]] || return 0
+  cp -a "$f" "$INDIR/.$f.tmp" 2>/dev/null && mv -f "$INDIR/.$f.tmp" "$INDIR/$f" 2>/dev/null
+}
+
+# Light snapshot: the SCF trace only (safe to read mid-run).
+save_trace() {
+  save_one ridft.out
+  save_one energy
+  save_one statistics
+}
+
+# Full snapshot: trace + restart point + deliverable. Call only when ridft is
+# NOT running (mos must be static) — i.e. from cleanup() after ridft has exited.
+save_full() {
+  save_trace
+  save_one mos
+  save_one control
+  for c in *.cosmo *.ccf; do
+    [[ -f "$c" ]] && cp -a "$c" "$INDIR/" 2>/dev/null
+  done
+}
+
+cleanup() {
+  trap - EXIT TERM INT          # disarm so cleanup runs exactly once
+  [[ -n "$CKPT_PID" ]] && kill "$CKPT_PID" 2>/dev/null
+  if [[ -n "$RIDFT_PID" ]] && kill -0 "$RIDFT_PID" 2>/dev/null; then
+    echo "[cleanup] stopping ridft (pid $RIDFT_PID), waiting for mos to flush ..."
+    kill "$RIDFT_PID" 2>/dev/null
+    wait "$RIDFT_PID" 2>/dev/null
+  fi
+  echo "[cleanup] saving SCF state -> $INDIR"
+  save_full
+  echo "[cleanup] done at $(date -Iseconds)"
+}
+trap cleanup EXIT TERM INT
+
+source __TURBOMOLE_ROOT__/vars
+export PARA_ARCH=SMP
+export TURBOMOLE_SYSNAME=__SYSNAME__
+export PATH=__TURBOMOLE_ROOT__/bin/$TURBOMOLE_SYSNAME:__TURBOMOLE_ROOT__/scripts:$PATH
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+
+# Stage inputs (auxbasis needed for RI-J). A pre-existing mos in INDIR is a
+# warm-restart guess from a previous run; ridft starts the SCF from it.
+for f in control coord basis mos auxbasis; do
+  [[ -f "$INDIR/$f" ]] && cp -a "$INDIR/$f" ./
+done
+if [[ -f mos ]]; then
+  echo "Warm start: using staged mos ($(du -h mos | cut -f1)) as SCF guess."
+else
+  echo "Cold start: no mos staged (eht guess from prep)."
+fi
+
+# Background trace checkpointer (ridft.out only — safe while ridft runs).
+( while true; do sleep "$CKPT_EVERY"; save_trace; done ) &
+CKPT_PID=$!
+
+# BP-TZVPD-FINE-ANNEAL uses ridft (RI-DFT) with annealed Fermi smearing
+# (2000 K -> 300 K) applied by _tune_scf.sh during prep. Run ridft in the
+# background so the cleanup trap can intercept walltime/cancel and snapshot
+# state before SLURM's SIGKILL.
+echo "=== ridft start $(date -Iseconds) ==="
+ridft > ridft.out 2>&1 &
+RIDFT_PID=$!
+wait "$RIDFT_PID"
+RIDFT_RC=$?
+RIDFT_PID=""               # ridft has exited; don't let cleanup try to kill it
+echo "=== ridft exit code: $RIDFT_RC ($(date -Iseconds)) ==="
+
+[[ -n "$CKPT_PID" ]] && kill "$CKPT_PID" 2>/dev/null
+
+if [[ -f __MOLECULE__.cosmo ]]; then
+  echo "SUCCESS: __MOLECULE__.cosmo produced (saved to INDIR on cleanup)."
+else
+  echo "NO .cosmo produced (rc=$RIDFT_RC). ridft.out is preserved in INDIR for the convergence trace."
+fi
+
+# Normal-exit path: the EXIT trap fires here and runs cleanup() -> save_full,
+# which is the single source of truth for copying state back to INDIR.
+exit $RIDFT_RC
