@@ -54,12 +54,21 @@ mkdir -p "$WORK_DIR"
 # COSMOtherm only searches FDIR for f="bare-name" references and does
 # NOT accept absolute paths in f= lines, so we build a unified FDIR
 # containing both the user molecule AND the relevant solvents.
-COSMOBASE_DB="$CT_COSMO_DB_PATH/BP-TZVPD-FINE"
+# Pick COSMO-RS level (parameterization .ctd + solvent DB) from the DFT protocol,
+# so a TZVP solute is screened against TZVP solvents with the TZVP parameterization
+# (and TZVPD against TZVPD-FINE) — never mixing levels.
+case "$DFT_PROTOCOL" in
+    BP-TZVP-*)   CTD="BP_TZVP_25.ctd"       ; DB_NAME="BP-TZVP-COSMO" ;;
+    BP-TZVPD-*)  CTD="BP_TZVPD_FINE_25.ctd" ; DB_NAME="BP-TZVPD-FINE" ;;
+    *)           CTD="BP_TZVPD_FINE_25.ctd" ; DB_NAME="BP-TZVPD-FINE" ;;
+esac
+COSMOBASE_DB="$CT_COSMO_DB_PATH/$DB_NAME"
 LOCAL_FDIR="$WORK_DIR/cosmo-files"
 
 echo "=== cosmotherm_screen ==="
 echo "  Molecule:     $MOLECULE"
 echo "  DFT protocol: $DFT_PROTOCOL"
+echo "  COSMO-RS ctd: $CTD"
 echo "  Solute .cosmo: $COSMO_FILE"
 echo "  Workdir:      $WORK_DIR"
 echo "  Local FDIR:   $LOCAL_FDIR"
@@ -124,6 +133,7 @@ PURE_INP="$WORK_DIR/pure-screen.inp"
 sed \
     -e "s|__CT_PARAM_PATH__|$CT_PARAM_PATH|g" \
     -e "s|__CT_LICENSE_DIR__|$CT_LICENSE_DIR|g" \
+    -e "s|__CTD__|$CTD|g" \
     -e "s|__FDIR__|$FDIR|g" \
     -e "s|__MOLECULE__|$MOLECULE|g" \
     -e "s|__SOLVENTS_LIST__|$SOLVENTS_LIST|g" \
@@ -139,45 +149,53 @@ else
     grep -m 5 -E 'ERROR|Error' "$WORK_DIR/pure-screen.out" 2>/dev/null | sed 's/^/    /'
 fi
 
-# --- 3. Mixture screens ---
+# --- 3. Mixture screens (opt-in) ---
+# Binary mixtures use an ABSOLUTE SLE solve (SLESOL, needs DG_fus), which is not
+# on the same footing as the relative pure-solvent ranking. Off by default;
+# set SCREEN_MIXTURES=1 to run them.
 echo
-echo "[2/2] binary-mixture screens..."
 i=0
 ok=0
 fail=0
-while IFS= read -r line || [[ -n "$line" ]]; do
-    # Skip comments and blanks
-    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+if [[ "${SCREEN_MIXTURES:-0}" == "1" ]]; then
+    echo "[2/2] binary-mixture screens..."
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Skip comments and blanks
+        [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
 
-    # Parse: label sol1 sol2 x1 x2 (whitespace-separated)
-    read -r label sol1 sol2 x1 x2 _ <<< "$line"
-    [[ -z "$label" ]] && continue
-    i=$((i + 1))
+        # Parse: label sol1 sol2 x1 x2 (whitespace-separated)
+        read -r label sol1 sol2 x1 x2 _ <<< "$line"
+        [[ -z "$label" ]] && continue
+        i=$((i + 1))
 
-    MIX_INP="$WORK_DIR/mix-${label}.inp"
-    MIX_TAB="$WORK_DIR/mix-${label}.tab"
-    sed \
-        -e "s|__CT_PARAM_PATH__|$CT_PARAM_PATH|g" \
-        -e "s|__CT_LICENSE_DIR__|$CT_LICENSE_DIR|g" \
-        -e "s|__FDIR__|$FDIR|g" \
-        -e "s|__MOLECULE__|$MOLECULE|g" \
-        -e "s|__MIX_LABEL__|$label|g" \
-        -e "s|__SOLVENT1__|$sol1|g" \
-        -e "s|__SOLVENT2__|$sol2|g" \
-        -e "s|__X_SOLVENT1__|$x1|g" \
-        -e "s|__X_SOLVENT2__|$x2|g" \
-        "$PROTO_DIR/screen-mixture.tmpl" > "$MIX_INP"
+        MIX_INP="$WORK_DIR/mix-${label}.inp"
+        MIX_TAB="$WORK_DIR/mix-${label}.tab"
+        sed \
+            -e "s|__CT_PARAM_PATH__|$CT_PARAM_PATH|g" \
+            -e "s|__CT_LICENSE_DIR__|$CT_LICENSE_DIR|g" \
+            -e "s|__CTD__|$CTD|g" \
+            -e "s|__FDIR__|$FDIR|g" \
+            -e "s|__MOLECULE__|$MOLECULE|g" \
+            -e "s|__MIX_LABEL__|$label|g" \
+            -e "s|__SOLVENT1__|$sol1|g" \
+            -e "s|__SOLVENT2__|$sol2|g" \
+            -e "s|__X_SOLVENT1__|$x1|g" \
+            -e "s|__X_SOLVENT2__|$x2|g" \
+            "$PROTO_DIR/screen-mixture.tmpl" > "$MIX_INP"
 
-    printf '  [%2d] %-30s %s/%s = %s/%s ... ' "$i" "$label" "$sol1" "$sol2" "$x1" "$x2"
-    ( cd "$WORK_DIR" && cosmotherm "$(basename "$MIX_INP")" ) >/dev/null 2>&1 || true
-    if [[ -f "$MIX_TAB" && -s "$MIX_TAB" ]]; then
-        echo "ok"
-        ok=$((ok + 1))
-    else
-        echo "FAIL (no .tab)"
-        fail=$((fail + 1))
-    fi
-done < "$PROTO_DIR/mixtures-binary.list"
+        printf '  [%2d] %-30s %s/%s = %s/%s ... ' "$i" "$label" "$sol1" "$sol2" "$x1" "$x2"
+        ( cd "$WORK_DIR" && cosmotherm "$(basename "$MIX_INP")" ) >/dev/null 2>&1 || true
+        if [[ -f "$MIX_TAB" && -s "$MIX_TAB" ]]; then
+            echo "ok"
+            ok=$((ok + 1))
+        else
+            echo "FAIL (no .tab)"
+            fail=$((fail + 1))
+        fi
+    done < "$PROTO_DIR/mixtures-binary.list"
+else
+    echo "[2/2] binary-mixture screens SKIPPED (relative pure-only; set SCREEN_MIXTURES=1 to enable)"
+fi
 
 echo
 echo "[done] pure: 1 + mixtures: $ok ok / $fail fail (total $i)"

@@ -967,7 +967,7 @@ def main() -> int:
             write_mixtures_xlsx(out_mix_xlsx, mixtures, molecule)
             print(f"wrote {out_mix_xlsx}")
             wrote_xlsx = True
-        if pure_rows or mixtures:
+        if mixtures:
             write_combined_ranking_xlsx(out_rank_xlsx, pure_rows, mixtures, molecule)
             print(f"wrote {out_rank_xlsx}")
             wrote_xlsx = True
