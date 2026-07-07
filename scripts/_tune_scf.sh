@@ -44,6 +44,22 @@ if [[ ! -f control ]]; then
 fi
 
 case "$PROTOCOL" in
+  *PLAIN*)
+    # Reference-style plain SCF: TURBOMOLE defaults — NO Fermi smearing, NO
+    # level-shift override, NO $scftol, default damping. All six prior TZVPD
+    # rungs carried the annealed Fermi; "plain default SCF" is the one config
+    # never tried, and is exactly what the working reference pipeline uses.
+    # Only change: raise the iteration cap so a slow-but-stable SCF isn't cut
+    # off at define's default limit — a cap, not a stabilizer.
+    if grep -q '^\$scfiterlimit' control; then
+      sed -i 's|^\$scfiterlimit.*|$scfiterlimit      300|' control
+    else
+      sed -i "/^\\\$end/i \$scfiterlimit      300" control
+    fi
+    grep -q '^\$scfiterlimit' control \
+      && echo "  PLAIN SCF: TM defaults (no Fermi / shift / scftol), scfiterlimit=300" \
+      || { echo "ERROR: failed to set scfiterlimit for PLAIN" >&2; exit 1; }
+    ;;
   BP-TZVPD-*|BP-TZVP-*|BP-SVP-FINE|BP-SVP-FINE-ANNEAL)
     # Hard-case SCF tuning for ill-conditioned (near-linearly-dependent) systems:
     # any *HARD* protocol uses TURBOMOLE's recommended heavy damping + large level
