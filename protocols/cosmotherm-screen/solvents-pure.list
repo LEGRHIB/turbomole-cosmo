@@ -31,7 +31,7 @@ acetonitrile
 # --- Ethers / cyclic (4) ---
 thf
 dioxane                   # 1,4-dioxane
-cyclopentyl-methyl-ether  # CPME (per reference)
+# cyclopentyl-methyl-ether  # CPME — basename unresolved in this COSMObase; re-add when found
 anisole
 
 # --- Esters (4) ---

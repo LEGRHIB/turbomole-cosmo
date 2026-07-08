@@ -118,11 +118,12 @@ FDIR="$LOCAL_FDIR"
 
 # --- 1. Render pure-solvent batch list (strip comments / blanks, append _c0.cosmo) ---
 SOLVENTS_LIST="$WORK_DIR/solvents-batch.list"
+# Only list solvents actually staged into LOCAL_FDIR, so a name missing from
+# COSMObase is skipped (see WARN above) instead of aborting the ENTIRE pure
+# screen — COSMOtherm errors out if any single f_batch entry can't be found.
 grep -v '^[[:space:]]*#' "$PROTO_DIR/solvents-pure.list" \
-    | sed 's/[[:space:]]*$//' \
-    | grep -v '^[[:space:]]*$' \
-    | awk '{print $1}' \
-    | sed 's|$|_c0.cosmo|' \
+    | awk 'NF{print $1}' \
+    | while read -r s; do [[ -e "$LOCAL_FDIR/${s}_c0.cosmo" ]] && echo "${s}_c0.cosmo"; done \
     > "$SOLVENTS_LIST"
 N_PURE=$(wc -l < "$SOLVENTS_LIST")
 echo "[1/2] pure-solvent screen ($N_PURE solvents)..."
