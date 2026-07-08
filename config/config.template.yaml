@@ -1,0 +1,68 @@
+# cosmors config template — copy to config/config.yaml and edit for your environment.
+#
+# Every scalar can be overridden by an env var named  COSMORS_<SECTION>_<KEY>
+#   e.g.  COSMORS_SLURM_ACCOUNT=lp_foo   COSMORS_CONFORMERS_RMSD_CUTOFF=1.2
+# A few legacy names from config.sh are also honored: TURBOMOLE_ROOT,
+# TURBOMOLE_SYSNAME, ACCOUNT.
+#
+# Nothing here is hardcoded in the code — paths, level of theory, .ctd, cutoffs,
+# temperature and the solvent list all live in this file.
+
+compound:
+  name: bombesin
+  charge: null              # null = derive (propka/openbabel); or set an integer
+
+paths:                      # commercial binaries live on the workstation / HPC only
+  turbomole_root: /data/leuven/301/vsc30101/turbomole7.8
+  turbomole_sysname: em64t-unknown-linux-gnu
+  cosmoconf_bin: cosmoconf
+  cosmotherm_bin: cosmotherm
+  cosmotherm_env: /data/leuven/385/vsc38535/cosmotherm/cosmotherm-env.sh
+  ct_param_path: null       # CDIR — directory holding the .ctd files
+  ct_license_dir: null      # LDIR — COSMOtherm license dir
+  ct_cosmo_db_path: null    # FDIR — COSMObase / BP-TZVPD-FINE solvent database
+
+theory:                     # must match the .ctd parametrisation
+  functional: b-p           # BP86
+  basis: def2-TZVPD
+  grid: m4
+  cavity: fine
+  ri: true
+  cosmo_epsilon: infinity   # ideal conductor — NEVER solvent-specific. Enforced in code.
+
+ctd:
+  default: BP_TZVPD_FINE_25.ctd
+  licensed:                 # every .ctd you are licensed for
+    - BP_TZVPD_FINE_25.ctd
+
+conformers:
+  rmsd_cutoff: 1.0          # Angstrom — Butina clustering gate BEFORE any DFT
+  energy_window: 6.0        # kcal/mol — drop conformers above the minimum by this
+  max_conformers: 40        # hard cap on geometries sent to DFT
+
+md:                         # Stage 4 front-end (conformer source for flexible/large solutes)
+  enabled: true
+  engine: openmm            # openmm | gromacs
+  method: high_temp         # high_temp | metadynamics
+  temperature_K: 500
+  n_frames: 200
+  cluster_rmsd: 1.5         # Angstrom — RMSD cutoff for clustering MD frames
+
+cosmotherm:
+  temperature_C: 25.0
+  property: relative_solubility   # relative solubility only (log x_RS), conformer-weighted
+  reference_compound: water
+  solvent_panel: config/solvent_panel.yaml
+  force_qspr: true
+  relative: true
+
+slurm:
+  cluster: wice
+  partition: batch
+  account: lp_cheme_cfd
+  fine:   {cpus: 16, mem: 120000M, time: "72:00:00"}
+  bigmem: {cpus: 72, mem: 2000000M, time: "72:00:00"}
+
+run:
+  workdir: work             # working-directory root; each stage writes a subdir + .done stamp
+  resume: true              # skip stages whose .done stamp already exists

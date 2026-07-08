@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cosmors"
+version = "0.1.0"
+description = "Conformer-resolved COSMO-RS pipeline (COSMOconf/TURBOMOLE + COSMOtherm)"
+requires-python = ">=3.9"
+dependencies = [
+    "pyyaml>=5.4",
+]
+
+[project.optional-dependencies]
+# Heavy / environment-specific deps kept optional so the core (config, CLI, mock
+# mode, tests) runs with just pyyaml. Installed on the workstation/HPC as needed.
+chem = ["rdkit"]           # SMILES->3D, Butina clustering, SDF I/O
+turbomole = ["turbomoleio"]  # self-contained SCF backend: control editing + parsing
+md = ["openmm", "mdanalysis"]  # Stage 4 MD front-end
+dev = ["pytest>=7"]
+
+[project.scripts]
+cosmors = "cosmors.cli:main"
+
+[tool.setuptools]
+packages = ["cosmors"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
