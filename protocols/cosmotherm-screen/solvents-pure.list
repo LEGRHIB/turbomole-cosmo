@@ -1,44 +1,51 @@
-# COSMObase BP-TZVPD-FINE pure-solvent panel for medicinal/process chemistry screening.
-# One solvent per line. Comment lines start with '#'. Blank lines ignored.
-# Names match COSMObase filenames (without _c0.cosmo suffix).
+# COSMObase pure-solvent panel — process / crystallization screen (user panel).
+# One solvent per line; names = COSMObase basenames (without the _c0.cosmo suffix).
+# Comment lines start with '#'; blank lines ignored.
+# Level-aware: resolved against BP-TZVP-COSMO (lysozyme) or BP-TZVPD-FINE (others).
 #
-# Dropped (not in BP-TZVPD-FINE database): dichloromethane, mtbe,
-#   n-methylpyrrolidone, 1,2-propanediol.
+# ** NEW ** names not in the prior panel — VERIFY they resolve in COSMObase
+# (the validation step reports any MISS; fix the basename or drop). Candidates:
+#   2-butanol, 1-pentanol, 4-methyl-2-pentanone, 2-methyltetrahydrofuran,
+#   cyclopentylmethylether, n-propylacetate, isobutylacetate, butylacetate,
+#   methylcyclohexane.
+# Dropped: phosphate buffer pH7 (PBS) — COSMO-RS cannot represent salts / pH.
 
-# --- Protic polar (9) ---
+# --- Water (1) ---
 h2o
+
+# --- Alcohols (7) ---
 methanol
 ethanol
-propanol
-2-propanol
+propanol                  # 1-propanol
+2-propanol                # IPA
 1-butanol
-1-octanol
-glycol
-glycerol
+2-butanol                 # ** NEW **
+1-pentanol                # ** NEW **
 
-# --- Aprotic polar (6) ---
-dimethylsulfoxide
-dimethylformamide
-n,n-dimethylacetamide
-propanone
+# --- Ketones (3) ---
+propanone                 # acetone
+butanone                  # 2-butanone / MEK
+4-methyl-2-pentanone      # MIBK   ** NEW **
+
+# --- Nitrile (1) ---
 acetonitrile
-butanone
 
-# --- Ether / Ester / Cyclic (6) ---
+# --- Ethers / cyclic (5) ---
 thf
-dioxane
-ethylacetate
-isopropylacetate
-diethylether
+2-methyltetrahydrofuran   # 2-MeTHF   ** NEW **
+dioxane                   # 1,4-dioxane
+cyclopentylmethylether    # CPME   ** NEW **
 anisole
 
-# --- Nonpolar (5) ---
-hexane
-n-heptane
-cyclohexane
-toluene
-1,4-dimethylbenzene
+# --- Esters (5) ---
+ethylacetate
+isopropylacetate
+n-propylacetate           # ** NEW **
+isobutylacetate           # ** NEW **
+butylacetate              # n-butyl acetate   ** NEW **
 
-# --- Halogenated (2) ---
-chcl3                    # chloroform (COSMObase uses chemical formula)
-1,2-dichloroethane
+# --- Hydrocarbons / aromatic (4) ---
+n-heptane                 # heptane
+methylcyclohexane         # ** NEW **
+toluene
+1,4-dimethylbenzene       # xylene (p-isomer)
