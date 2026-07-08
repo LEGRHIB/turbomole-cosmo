@@ -547,6 +547,7 @@ def _build_mix_summary(label: str, rows: list[dict]) -> dict:
     summary['log10(S)_iter'] = _to_float(solute.get(col_logS_iter)) if col_logS_iter else None
     summary['log10(S)_ni'] = _to_float(solute.get(col_logS_ni)) if col_logS_ni else None
     summary['mu_solute_in_mix'] = _to_float(solute.get('mu(solv)'))
+    summary['mu_water'] = _to_float(solute.get('mu(water)'))
     summary['DG_fus'] = _to_float(solute.get('DG_fus'))
 
     # PRIMARY column selection:
@@ -865,6 +866,97 @@ def write_combined_ranking_xlsx(
     return True
 
 
+def write_relative_ranking_xlsx(
+    out_path: Path,
+    pure_rows: list[dict],
+    mixtures: dict[str, tuple[dict, dict, list[dict]]],
+    molecule: str,
+) -> bool:
+    """Unified pure + mixture ranking on ONE axis: relative solubility vs water.
+
+    Everything is log10(x_solvent / x_water) — the DG_fus-free relative
+    solubility (water = 0, positive = more soluble than pure water):
+      - Pures:    log10(x_RS,i) - log10(x_RS,water)   (from pure-screen.tab)
+      - Mixtures: (mu(water) - mu(solv)) / (RT*ln10)   (from each mix-*.tab)
+    Both equal (mu_water - mu_solv,i)/(RT*ln10): the solute-reference constant
+    in x_RS cancels when water is subtracted, and the pure screen's water x_RS
+    and a mixture's mu(water) are the same quantity (solute in pure water).
+
+    Ranks COSMO-RS surface affinity, not absolute solubility (which floors to
+    log10(x_solub)=0 for a protein). Magnitudes scale with solute surface area
+    -> comparable within one solute, not between solutes.
+    """
+    if not HAS_OPENPYXL:
+        return False
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Relative ranking"
+    bold = Font(bold=True)
+    italic = Font(italic=True)
+    grey = PatternFill("solid", fgColor="EEEEEE")
+
+    # Water reference: log10(x_RS) of h2o in the pure screen.
+    water_ref = None
+    for r in pure_rows:
+        if r.get('Solvent', '').strip() == 'h2o':
+            water_ref = _to_float(r.get('log10(x_RS)'))
+            break
+
+    combined: list[dict] = []
+    for r in pure_rows:
+        x_rs = _to_float(r.get('log10(x_RS)'))
+        rel = (x_rs - water_ref) if (x_rs is not None and water_ref is not None) else None
+        combined.append({'system': r.get('Solvent', ''), 'type': 'pure',
+                         'composition': r.get('Solvent', ''), 'rel': rel,
+                         'raw': x_rs, 'raw_kind': 'log10(x_RS)', 'source': 'pure-screen'})
+    for label, (_, _, rows) in mixtures.items():
+        s = _build_mix_summary(label, rows)
+        mu_solv = s.get('mu_solute_in_mix')
+        mu_w = s.get('mu_water')
+        rel = ((mu_w - mu_solv) / RT_LN10_KCAL_AT_298K
+               if (mu_solv is not None and mu_w is not None) else None)
+        combined.append({'system': label, 'type': 'mixture',
+                         'composition': s.get('composition', label), 'rel': rel,
+                         'raw': mu_solv, 'raw_kind': 'mu(solv) kcal/mol',
+                         'source': 'mix mu(water)-mu(solv)'})
+
+    combined.sort(key=lambda c: c['rel'] if c['rel'] is not None else float('-inf'),
+                  reverse=True)
+
+    note = (
+        "Relative solubility vs pure water (water = 0): log10(x_solvent/x_water), "
+        "DG_fus-free.  Pures = log10(x_RS) - log10(x_RS,water);  mixtures = "
+        f"(mu(water) - mu(solv)) / (RT*ln10 = {RT_LN10_KCAL_AT_298K:.4f} kcal/mol).  "
+        "Positive = more soluble than water.  COSMO-RS surface affinity, not "
+        "absolute solubility; magnitudes comparable within this solute only."
+    )
+    ws.cell(row=1, column=1, value=note).font = italic
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=8)
+
+    headers = ['rank', 'system', 'type', 'composition',
+               'rel_log10_solub_vs_water', 'raw_value', 'raw_kind', 'source']
+    hr = 3
+    for ci, h in enumerate(headers, 1):
+        c = ws.cell(row=hr, column=ci, value=h)
+        c.font = bold
+        c.fill = grey
+    for i, row in enumerate(combined, 1):
+        ws.cell(row=hr + i, column=1, value=i)
+        ws.cell(row=hr + i, column=2, value=row['system'])
+        ws.cell(row=hr + i, column=3, value=row['type'])
+        ws.cell(row=hr + i, column=4, value=row['composition'])
+        ws.cell(row=hr + i, column=5, value=row['rel'])
+        ws.cell(row=hr + i, column=6, value=row['raw'])
+        ws.cell(row=hr + i, column=7, value=row['raw_kind'])
+        ws.cell(row=hr + i, column=8, value=row['source'])
+    for ci, h in enumerate(headers, 1):
+        ws.column_dimensions[chr(ord('A') + ci - 1)].width = max(len(h) + 2, 16)
+
+    wb.save(out_path)
+    return True
+
+
 def write_combined_csv(
     out_path: Path,
     pure_rows: list[dict],
@@ -967,8 +1059,8 @@ def main() -> int:
             write_mixtures_xlsx(out_mix_xlsx, mixtures, molecule)
             print(f"wrote {out_mix_xlsx}")
             wrote_xlsx = True
-        if mixtures:
-            write_combined_ranking_xlsx(out_rank_xlsx, pure_rows, mixtures, molecule)
+        if pure_rows or mixtures:
+            write_relative_ranking_xlsx(out_rank_xlsx, pure_rows, mixtures, molecule)
             print(f"wrote {out_rank_xlsx}")
             wrote_xlsx = True
     else:
