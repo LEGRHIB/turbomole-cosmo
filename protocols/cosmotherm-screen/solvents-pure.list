@@ -3,12 +3,10 @@
 # Comment lines start with '#'; blank lines ignored.
 # Level-aware: resolved against BP-TZVP-COSMO (lysozyme) or BP-TZVPD-FINE (others).
 #
-# ** NEW ** names not in the prior panel — VERIFY they resolve in COSMObase
-# (the validation step reports any MISS; fix the basename or drop). Candidates:
-#   2-butanol, 1-pentanol, 4-methyl-2-pentanone, 2-methyltetrahydrofuran,
-#   cyclopentylmethylether, n-propylacetate, isobutylacetate, butylacetate,
-#   methylcyclohexane.
-# Dropped: phosphate buffer pH7 (PBS) — COSMO-RS cannot represent salts / pH.
+# Names verified against COSMObase (BP-TZVP-COSMO + BP-TZVPD-FINE).
+# Dropped: phosphate buffer pH7 (PBS) — COSMO-RS cannot represent salts / pH;
+#   2-methyltetrahydrofuran and isobutylacetate — not found in either database
+#   (nor in the reference panel). Give a basename to re-add either.
 
 # --- Water (1) ---
 h2o
@@ -30,22 +28,20 @@ butanone                  # 2-butanone / MEK
 # --- Nitrile (1) ---
 acetonitrile
 
-# --- Ethers / cyclic (5) ---
+# --- Ethers / cyclic (4) ---
 thf
-2-methyltetrahydrofuran   # 2-MeTHF   ** NEW **
 dioxane                   # 1,4-dioxane
-cyclopentylmethylether    # CPME   ** NEW **
+cyclopentyl-methyl-ether  # CPME (per reference)
 anisole
 
-# --- Esters (5) ---
+# --- Esters (4) ---
 ethylacetate
 isopropylacetate
-n-propylacetate           # ** NEW **
-isobutylacetate           # ** NEW **
-butylacetate              # n-butyl acetate   ** NEW **
+n-propylacetate
+n-butylacetate            # butyl acetate (per reference)
 
 # --- Hydrocarbons / aromatic (4) ---
 n-heptane                 # heptane
 methylcyclohexane         # ** NEW **
 toluene
-1,4-dimethylbenzene       # xylene (p-isomer)
+1,3-dimethylbenzene       # xylene (m-isomer, per reference)
