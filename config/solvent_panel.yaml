@@ -1,0 +1,70 @@
+# solvent_panel.yaml
+# Crystallization / solubility solvent screen for the COSMO-RS conformer pipeline.
+# Captured verbatim from the project brief; supersedes protocols/cosmotherm-screen/*.list
+# for the bombesin first run.
+#
+# NOTES / ASSUMPTIONS (confirm before the real COSMOtherm run):
+#   * ratios (e.g. 95:5, 9:1) are interpreted as VOLUME/VOLUME (pharma convention).
+#     stage3 converts v/v -> mole fraction using density + molar mass. Flip
+#     `ratio_basis: mole` below if these were already mole ratios.
+#   * "phosphate buffer pH 7 (PBS)" has no native COSMO-RS representation; it is
+#     approximated as pure water and flagged in the output. Ionic strength / pH
+#     effects are outside COSMO-RS.
+#   * `cosmobase` basenames are filled in during P3 against YOUR installed COSMObase
+#     (BP-TZVPD-FINE dir). Left null here so nothing is fabricated.
+
+ratio_basis: volume        # volume | mole
+temperature_C: 25.0
+buffer_as_water: true
+
+pure:
+  - {name: "1-butanol",              cosmobase: null}
+  - {name: "1,4-dioxane",            cosmobase: null}
+  - {name: "2-butanone (MEK)",       cosmobase: null}
+  - {name: "acetone",                cosmobase: null}
+  - {name: "1-pentanol",             cosmobase: null}
+  - {name: "ethanol (EtOH)",         cosmobase: null}
+  - {name: "acetonitrile (ACN)",     cosmobase: null}
+  - {name: "THF",                    cosmobase: null}
+  - {name: "1-propanol",             cosmobase: null}
+  - {name: "heptane",                cosmobase: null}
+  - {name: "ethyl acetate",          cosmobase: null}
+  - {name: "2-methyl-THF",           cosmobase: null}
+  - {name: "2-butanol",              cosmobase: null}
+  - {name: "isobutyl acetate",       cosmobase: null}
+  - {name: "isopropyl acetate",      cosmobase: null}
+  - {name: "2-propanol (IPA)",       cosmobase: null}
+  - {name: "n-propyl acetate",       cosmobase: null}
+  - {name: "methanol (MeOH)",        cosmobase: null}
+  - {name: "4-methyl-2-pentanone (MIBK)", cosmobase: null}
+  - {name: "toluene",                cosmobase: null}
+  - {name: "anisole",                cosmobase: null}
+  - {name: "water (H2O)",            cosmobase: null}
+  - {name: "butyl acetate",          cosmobase: null}
+  - {name: "xylene",                 cosmobase: null}
+  - {name: "cyclopentyl methyl ether (CPME)", cosmobase: null}
+  - {name: "methyl cyclohexane",     cosmobase: null}
+
+mixtures:   # ratio = first:second (see ratio_basis)
+  - {name: "1-propanol:H2O 95:5", components: ["1-propanol", "water"], ratio: [95, 5]}
+  - {name: "EtOH:H2O 9:1",        components: ["ethanol", "water"],    ratio: [9, 1]}
+  - {name: "1-propanol:H2O 98:2", components: ["1-propanol", "water"], ratio: [98, 2]}
+  - {name: "EtOH:H2O 95:5",       components: ["ethanol", "water"],    ratio: [95, 5]}
+  - {name: "EtOH:H2O 3:1",        components: ["ethanol", "water"],    ratio: [3, 1]}
+  - {name: "IPA:H2O 9:1",         components: ["2-propanol", "water"], ratio: [9, 1]}
+  - {name: "IPA:H2O 95:5",        components: ["2-propanol", "water"], ratio: [95, 5]}
+  - {name: "IPA:H2O 98:2",        components: ["2-propanol", "water"], ratio: [98, 2]}
+  - {name: "IPA:H2O 1:1",         components: ["2-propanol", "water"], ratio: [1, 1]}
+  - {name: "MeOH:H2O 1:1",        components: ["methanol", "water"],   ratio: [1, 1]}
+  - {name: "MeOH:H2O 3:1",        components: ["methanol", "water"],   ratio: [3, 1]}
+  - {name: "MeOH:H2O 9:1",        components: ["methanol", "water"],   ratio: [9, 1]}
+  - {name: "acetone:H2O 1:1",     components: ["acetone", "water"],    ratio: [1, 1]}
+  - {name: "acetone:H2O 95:5",    components: ["acetone", "water"],    ratio: [95, 5]}
+  - {name: "acetone:H2O 98:2",    components: ["acetone", "water"],    ratio: [98, 2]}
+  - {name: "ACN:H2O 9:1",         components: ["acetonitrile", "water"], ratio: [9, 1]}
+  - {name: "ACN:H2O 98:2",        components: ["acetonitrile", "water"], ratio: [98, 2]}
+  - {name: "THF:H2O 95:5",        components: ["THF", "water"],        ratio: [95, 5]}
+  - {name: "dioxane:H2O 1:1",     components: ["1,4-dioxane", "water"], ratio: [1, 1]}
+
+buffers:
+  - {name: "phosphate buffer pH 7 (PBS)", approximate_as: "water", note: "ionic strength/pH outside COSMO-RS"}
