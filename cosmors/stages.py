@@ -1,14 +1,14 @@
 """Stage registry.
 
-P1 ships transparent MOCK stubs so the whole pipeline runs end-to-end in the
-sandbox without any commercial binary. Each stub:
+Real (sandbox-capable, RDKit-based) stages: input, confgen, cluster.
+Mock stubs still standing in for commercial-binary stages: md (P5), dft (P4),
+cosmotherm + sensitivity (P3). Each stub:
 
   * --dry-run : prints the real command it *would* run on the HPC; writes nothing.
-  * --mock    : writes a clearly-labelled synthetic artifact and a .done stamp.
+  * --mock    : writes a clearly-labelled synthetic artifact (`.mock.` filenames,
+                MOCK banner). No real scientific numbers are invented.
 
-Mock artifacts are deliberately fake (filenames carry `.mock.`, contents carry a
-MOCK banner). No real scientific numbers are invented for real molecules. Each
-real stage replaces its stub in the phase noted in its docstring.
+Uniform signature: fn(cfg, stage_dir, *, wd, mock, dry_run) -> StageResult.
 """
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from typing import Callable, List, Tuple
 
 from .config import Config
 from .models import StageResult
+from . import stage0_input, stage1_confgen, cluster as _cluster
 
 _MOCK_BANNER = "# MOCK ARTIFACT — synthetic placeholder, NOT a real result.\n"
 
@@ -30,76 +31,36 @@ def _mock_write(path: Path, payload) -> None:
 
 
 def _result(stage, stage_dir, *, dry_run, cmd, mock_files, message):
-    """Shared stub body: dry-run documents the HPC command; mock writes artifacts."""
     if dry_run:
         return StageResult(stage=stage, status="dry-run", workdir=str(stage_dir),
                            message=f"would run: {cmd}")
     arts = []
     for name, payload in mock_files:
-        p = Path(stage_dir) / name
-        _mock_write(p, payload)
+        _mock_write(Path(stage_dir) / name, payload)
         arts.append(name)
     return StageResult(stage=stage, status="done", workdir=str(stage_dir),
                        artifacts=arts, message=message)
 
 
 # --------------------------------------------------------------------------- #
-# Stage stubs
+# Mock stubs (commercial-binary stages)
 # --------------------------------------------------------------------------- #
-def stage_input(cfg: Config, stage_dir: Path, *, mock: bool, dry_run: bool) -> StageResult:
-    """Stage 0 — input prep (SMILES/SDF/xyz/PDB/CIF -> 3D + charge). Real: P2."""
-    return _result(
-        "input", stage_dir, dry_run=dry_run,
-        cmd=f"prepare {cfg.compound.name} -> geometry.xyz + charge.txt (RDKit/OpenBabel/PROPKA)",
-        mock_files=[("input.mock.xyz", f"MOCK geometry for {cfg.compound.name}"),
-                    ("charge.mock.txt", cfg.compound.charge if cfg.compound.charge is not None else 0)],
-        message=f"prepared {cfg.compound.name} (mock)",
-    )
-
-
-def stage_md(cfg: Config, stage_dir: Path, *, mock: bool, dry_run: bool) -> StageResult:
+def stage_md(cfg: Config, stage_dir: Path, *, wd, mock: bool, dry_run: bool) -> StageResult:
     """Stage 4 — MD front-end: frames -> RMSD cluster -> multi-conf SDF. Real: P5."""
     if not cfg.md.enabled:
         return StageResult("md", "skipped", str(stage_dir),
-                           message="md.enabled=false — COSMOconf generation will be used instead")
+                           message="md.enabled=false — COSMOconf generation used instead")
     return _result(
         "md", stage_dir, dry_run=dry_run,
         cmd=f"{cfg.md.engine} {cfg.md.method} @ {cfg.md.temperature_K} K, "
             f"{cfg.md.n_frames} frames -> Butina(rmsd={cfg.md.cluster_rmsd}) -> reps.sdf",
         mock_files=[("cluster_reps.mock.sdf",
-                     "MOCK: 3 representative conformers from MD clustering")],
-        message="MD proposed 3 conformer representatives (mock)",
+                     "MOCK: representative conformers from MD clustering")],
+        message="MD proposed conformer representatives (mock)",
     )
 
 
-def stage_confgen(cfg: Config, stage_dir: Path, *, mock: bool, dry_run: bool) -> StageResult:
-    """Stage 1 — ingest MD reps (generation skipped) or COSMOconf generation. Real: P2."""
-    src = "ingest MD reps (COSMOconf generation skipped)" if cfg.md.enabled \
-        else "COSMOconf generation (RDKit + GFN2-xTB + RMSD)"
-    return _result(
-        "confgen", stage_dir, dry_run=dry_run,
-        cmd=src,
-        mock_files=[("ensemble.mock.json",
-                     {"compound": cfg.compound.name, "n_conformers": 3, "source": src})],
-        message=f"ensemble built via {src} (mock)",
-    )
-
-
-def stage_cluster(cfg: Config, stage_dir: Path, *, mock: bool, dry_run: bool) -> StageResult:
-    """RMSD clustering gate — MANDATORY before any DFT. Real: P2."""
-    return _result(
-        "cluster", stage_dir, dry_run=dry_run,
-        cmd=f"Butina RMSD clustering (cutoff={cfg.conformers.rmsd_cutoff} A, "
-            f"energy_window={cfg.conformers.energy_window} kcal/mol, "
-            f"max={cfg.conformers.max_conformers}) BEFORE DFT",
-        mock_files=[("clusters.mock.json",
-                     {"in": 3, "kept": 2, "dropped_near_identical": 1,
-                      "rmsd_cutoff": cfg.conformers.rmsd_cutoff})],
-        message="RMSD gate: 3 in -> 2 unique kept (mock)",
-    )
-
-
-def stage_dft(cfg: Config, stage_dir: Path, *, mock: bool, dry_run: bool) -> StageResult:
+def stage_dft(cfg: Config, stage_dir: Path, *, wd, mock: bool, dry_run: bool) -> StageResult:
     """Stage 2 — COSMOconf-orchestrated TURBOMOLE DFT/COSMO (eps=inf). Real: P4."""
     files = [(f"conf{i:02d}.mock.cosmo", f"MOCK .cosmo (eps=infinity) conformer {i}")
              for i in (1, 2)]
@@ -115,15 +76,12 @@ def stage_dft(cfg: Config, stage_dir: Path, *, mock: bool, dry_run: bool) -> Sta
     )
 
 
-def stage_cosmotherm(cfg: Config, stage_dir: Path, *, mock: bool, dry_run: bool) -> StageResult:
+def stage_cosmotherm(cfg: Config, stage_dir: Path, *, wd, mock: bool, dry_run: bool) -> StageResult:
     """Stage 3 — COSMOtherm relative solubility, AUTOC conformers. Real: P3."""
     out = (
-        "MOCK COSMOtherm output — relative solubility (log x_RS).\n"
-        "Numbers below are placeholders, not a real result.\n"
+        "MOCK COSMOtherm output — relative solubility (log x_RS). Placeholders only.\n"
         f"ctd={cfg.ctd.default}  T={cfg.cosmotherm.temperature_C}C\n"
-        "solvent        log10(x_RS)\n"
-        "water          -9.99  (MOCK)\n"
-        "ethanol        -9.99  (MOCK)\n"
+        "solvent        log10(x_RS)\nwater          -9.99  (MOCK)\nethanol        -9.99  (MOCK)\n"
     )
     return _result(
         "cosmotherm", stage_dir, dry_run=dry_run,
@@ -134,12 +92,10 @@ def stage_cosmotherm(cfg: Config, stage_dir: Path, *, mock: bool, dry_run: bool)
     )
 
 
-def stage_sensitivity(cfg: Config, stage_dir: Path, *, mock: bool, dry_run: bool) -> StageResult:
+def stage_sensitivity(cfg: Config, stage_dir: Path, *, wd, mock: bool, dry_run: bool) -> StageResult:
     """Sensitivity report — parse per-phase weights -> decision gate. Real: P3."""
     verdict = {
-        "is_mock": True,
-        "single_conformer_sufficient": None,
-        "dominant_flips": None,
+        "is_mock": True, "single_conformer_sufficient": None, "dominant_flips": None,
         "note": "MOCK — real verdict computed from COSMOtherm weights in P3",
         "rule": "flag single-conformer if one conformer >0.95 weight in every phase",
     }
@@ -157,13 +113,13 @@ def stage_sensitivity(cfg: Config, stage_dir: Path, *, mock: bool, dry_run: bool
 StageFn = Callable[..., StageResult]
 
 PIPELINE: List[Tuple[str, StageFn]] = [
-    ("input", stage_input),
-    ("md", stage_md),
-    ("confgen", stage_confgen),
-    ("cluster", stage_cluster),
-    ("dft", stage_dft),
-    ("cosmotherm", stage_cosmotherm),
-    ("sensitivity", stage_sensitivity),
+    ("input", stage0_input.run),      # real (RDKit)
+    ("md", stage_md),                 # mock  (P5)
+    ("confgen", stage1_confgen.run),  # real (RDKit)
+    ("cluster", _cluster.run),        # real (RDKit) — enforced RMSD gate
+    ("dft", stage_dft),               # mock  (P4)
+    ("cosmotherm", stage_cosmotherm), # mock  (P3)
+    ("sensitivity", stage_sensitivity),  # mock (P3)
 ]
 
 STAGES = dict(PIPELINE)

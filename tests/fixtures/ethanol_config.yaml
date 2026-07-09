@@ -1,0 +1,4 @@
+# Light fixture config: real Stage 0/1/cluster run on ethanol (fast, deterministic).
+compound:
+  name: ethanol
+  smiles: CCO

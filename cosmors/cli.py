@@ -102,7 +102,7 @@ def _run_stages(cfg, args, keys: List[str]) -> int:
     rc = 0
     if args.dry_run:
         for key in keys:
-            result = STAGES[key](cfg, wd.path(key), mock=False, dry_run=True)
+            result = STAGES[key](cfg, wd.path(key), wd=wd, mock=False, dry_run=True)
             print(result)
             if not result.ok:
                 rc = 1
@@ -114,7 +114,7 @@ def _run_stages(cfg, args, keys: List[str]) -> int:
         fn = STAGES[key]
         result = wd.run_stage(
             key,
-            lambda d, fn=fn: fn(cfg, d, mock=True, dry_run=False),
+            lambda d, fn=fn: fn(cfg, d, wd=wd, mock=True, dry_run=False),
             resume=resume, force=args.force,
         )
         print(result)

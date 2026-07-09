@@ -29,6 +29,8 @@ class ConfigError(Exception):
 class Compound:
     name: str = "bombesin"
     charge: Optional[int] = None
+    input_path: Optional[str] = None   # SDF / xyz / PDB (null -> molecules/<name>/<name>.sdf)
+    smiles: Optional[str] = None        # SMILES string (overrides input_path)
 
 
 @dataclass
@@ -64,6 +66,7 @@ class Conformers:
     rmsd_cutoff: float = 1.0
     energy_window: float = 6.0
     max_conformers: int = 40
+    multi_sdf: Optional[str] = None     # pre-made multi-conformer SDF to ingest (bypasses MD)
 
 
 @dataclass

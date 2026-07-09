@@ -10,7 +10,9 @@
 
 compound:
   name: bombesin
-  charge: null              # null = derive (propka/openbabel); or set an integer
+  charge: null              # null = derive (RDKit formal charge / propka); or set an integer
+  input_path: null          # SDF / xyz / PDB; null -> look for molecules/<name>/<name>.sdf
+  smiles: null              # SMILES string (overrides input_path)
 
 paths:                      # commercial binaries live on the workstation / HPC only
   turbomole_root: /data/leuven/301/vsc30101/turbomole7.8
@@ -39,6 +41,7 @@ conformers:
   rmsd_cutoff: 1.0          # Angstrom — Butina clustering gate BEFORE any DFT
   energy_window: 6.0        # kcal/mol — drop conformers above the minimum by this
   max_conformers: 40        # hard cap on geometries sent to DFT
+  multi_sdf: null           # optional pre-made multi-conformer SDF to ingest (bypasses MD)
 
 md:                         # Stage 4 front-end (conformer source for flexible/large solutes)
   enabled: true
