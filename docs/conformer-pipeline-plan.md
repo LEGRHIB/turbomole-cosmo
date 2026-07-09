@@ -19,6 +19,7 @@ no RMSD gate, no weight/sensitivity parsing, no mock/test scaffold.
 |---|----------|--------|
 | Target | first end-to-end molecule | **bombesin** (14-residue, neutral; has SDF + AF conformer) |
 | Conformers | source for peptides | **MD front-end** (COSMOconf generation skipped for folded/large solutes) |
+| AF intake | AlphaFold mmCIF | **ported into Stage 0** (self-contained pLDDT gate + residue grafting); AF model **seeds the MD front-end** (pairs with P5) |
 | DFT driver | how TURBOMOLE is driven | **COSMOconf orchestrator + self-contained turbomoleio SCF backend** (decision B); stock for bombesin, hardened deferred |
 | Stage 4 MD | build now? | **Fully implemented now** (OpenMM-first, sandbox-testable; GROMACS adapter for HPC) |
 | Parametrisation | `.ctd` | **config-driven**, default `BP_TZVPD_FINE_25.ctd`; others licensed → selectable |
@@ -101,7 +102,9 @@ later for large proteins.
   sandbox; real path documented.
 - **P5** Stage 4 MD front-end (full): OpenMM high-T MD / metadynamics, GROMACS adapter,
   frames→Butina→multi-conf SDF feeding Stage 1 with COSMOconf generation skipped.
-  Integration-tested on a tiny system in-sandbox.
+  Integration-tested on a tiny system in-sandbox. **+ AlphaFold mmCIF intake** (pLDDT
+  gate + non-standard-residue grafting, self-contained port of `prepare_alphafold.py`)
+  feeding MD as the seed geometry.
 - **P6** End-to-end bombesin **mock** run + README (sandbox-vs-HPC split, per-stage HPC
   commands, MD decision logic) + pinned `environment.yml`.
 
