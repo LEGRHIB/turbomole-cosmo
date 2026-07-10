@@ -46,6 +46,9 @@ def run(cfg: Config, stage_dir: Path, *, wd, mock: bool, dry_run: bool) -> Stage
                                    f"or compound.input_path, or add molecules/"
                                    f"{cfg.compound.name}/{cfg.compound.name}.sdf")
 
+    if kind == "file" and value.lower().endswith(".cif"):
+        return _run_alphafold(cfg, stage_dir, value)
+
     try:
         if kind == "smiles":
             mol = ru.embed_from_smiles(value)
@@ -79,4 +82,45 @@ def run(cfg: Config, stage_dir: Path, *, wd, mock: bool, dry_run: bool) -> Stage
         stage, "done", str(stage_dir),
         artifacts=["geometry.xyz", "charge.txt", "input.sdf", "input_meta.json"],
         message=f"{formula}  charge={charge} ({charge_src})  {mol.GetNumAtoms()} atoms",
+    )
+
+
+def _run_alphafold(cfg: Config, stage_dir: Path, cif: str) -> StageResult:
+    """Stage 0 for an AlphaFold mmCIF: pLDDT gate + (optional) template transplant."""
+    from . import af_intake
+    d = Path(stage_dir)
+    try:
+        r = af_intake.intake(cif, cfg.compound.template, cfg.compound.charge,
+                             cfg.compound.plddt_gate)
+    except Exception as exc:
+        return StageResult("input", "error", str(d), message=f"AlphaFold intake: {exc}")
+
+    (d / "plddt.json").write_text(json.dumps(r["plddt"], indent=2) + "\n")
+    charge = r["charge"]
+    if r["mode"] == "template":
+        mol = r["mol"]
+        from rdkit.Chem import rdMolDescriptors
+        formula, natoms = rdMolDescriptors.CalcMolFormula(mol), mol.GetNumAtoms()
+        ru.write_xyz(str(d / "geometry.xyz"), mol,
+                     comment=f"{cfg.compound.name} from AlphaFold (template)")
+        ru.write_sdf(str(d / "input.sdf"), [mol])
+        arts = ["geometry.xyz", "charge.txt", "input.sdf", "plddt.json", "input_meta.json"]
+    else:
+        (d / "geometry.xyz").write_text(r["xyz"])
+        formula, natoms = f"{r['n_atoms']} heavy atoms", r["n_atoms"]
+        arts = ["geometry.xyz", "charge.txt", "plddt.json", "input_meta.json"]
+
+    (d / "charge.txt").write_text(f"{charge}\n")
+    meta = {"compound": cfg.compound.name, "source_kind": "alphafold_cif", "source": cif,
+            "mode": r["mode"], "charge": charge,
+            "plddt_mean": round(r["plddt"]["mean"], 1),
+            "weak_residues": r["plddt"]["weak_residues"],
+            "formula": formula, "n_atoms": natoms}
+    (d / "input_meta.json").write_text(json.dumps(meta, indent=2) + "\n")
+
+    weak = r["plddt"]["weak_residues"]
+    return StageResult(
+        "input", "done", str(d), artifacts=arts,
+        message=f"AF {r['mode']}: pLDDT mean {r['plddt']['mean']:.1f}, "
+                f"{len(weak)} weak residue(s), charge={charge} -> seeds MD",
     )

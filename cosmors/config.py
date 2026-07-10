@@ -29,8 +29,10 @@ class ConfigError(Exception):
 class Compound:
     name: str = "bombesin"
     charge: Optional[int] = None
-    input_path: Optional[str] = None   # SDF / xyz / PDB (null -> molecules/<name>/<name>.sdf)
+    input_path: Optional[str] = None   # SDF / xyz / PDB / CIF (null -> molecules/<name>/<name>.sdf)
     smiles: Optional[str] = None        # SMILES string (overrides input_path)
+    template: Optional[str] = None      # SDF grafted onto an AlphaFold backbone (non-standard residues)
+    plddt_gate: float = 50.0            # AlphaFold pLDDT confidence gate
 
 
 @dataclass

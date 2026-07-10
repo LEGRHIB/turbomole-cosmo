@@ -11,8 +11,10 @@
 compound:
   name: bombesin
   charge: null              # null = derive (RDKit formal charge / propka); or set an integer
-  input_path: null          # SDF / xyz / PDB; null -> look for molecules/<name>/<name>.sdf
+  input_path: null          # SDF / xyz / PDB / AlphaFold CIF; null -> molecules/<name>/<name>.sdf
   smiles: null              # SMILES string (overrides input_path)
+  template: null            # SDF grafted onto an AlphaFold backbone (non-standard residues)
+  plddt_gate: 50.0          # AlphaFold pLDDT confidence gate
 
 paths:                      # commercial binaries live on the workstation / HPC only
   turbomole_root: /data/leuven/301/vsc30101/turbomole7.8

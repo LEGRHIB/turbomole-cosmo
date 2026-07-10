@@ -41,6 +41,7 @@ def test_run_mock_full_pipeline(tmp_path):
         assert (base / key / ".done").exists(), f"{key} not stamped"
     # real artifacts from the RDKit stages
     assert (base / "input" / "geometry.xyz").exists()
+    assert (base / "md" / "cluster_reps.sdf").exists()   # MD front-end ran (synthetic frames)
     assert (base / "confgen" / "ensemble.sdf").exists()
     assert (base / "cluster" / "kept.sdf").exists()
     assert (base / "cluster" / "clusters.json").exists()

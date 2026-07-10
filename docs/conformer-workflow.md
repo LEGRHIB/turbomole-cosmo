@@ -88,7 +88,7 @@ widens the conformer search; it does not set the thermodynamics.
 
 ## Stages
 
-### Stage 0 — Input  **[SMILES/SDF/PDB real; AlphaFold intake coming → P5]**
+### Stage 0 — Input  **[real]**
 SMILES / SDF / PDB / **AlphaFold mmCIF** → normalised 3D geometry + total charge
 (RDKit; explicit-config charge overrides the RDKit formal charge; PROPKA-derived charge
 for titratable proteins). For AlphaFold models the intake applies a per-residue **pLDDT
@@ -97,7 +97,7 @@ self-contained from `prepare_alphafold.py`), then treats the folded model as a *
 for the Stage 4 MD front-end** rather than a final geometry. Emits `geometry.xyz`,
 `charge.txt`, `input.sdf`, provenance metadata. Run: `cosmors input`.
 
-### Stage 4 — MD front-end  **[mock → P5]**
+### Stage 4 — MD front-end  **[frames/clustering real; MD engine optional/HPC]**
 High-temperature MD or metadynamics (OpenMM in-sandbox; GROMACS adapter on HPC) →
 frame extraction → RMSD clustering (Butina) → cluster representatives as a
 multi-conformer SDF. The conformer source for flexible/large solutes; **off by
@@ -116,7 +116,7 @@ at `conformers.rmsd_cutoff`, one representative per cluster, hard `max_conformer
 cap. Only the kept set reaches DFT. Emits `kept.sdf`, `clusters.json`.
 Run: `cosmors cluster`.
 
-### Stage 2 — DFT / COSMO  **[mock → P4]**
+### Stage 2 — DFT / COSMO  **[real; binaries on HPC]**
 COSMOconf orchestrates the TURBOMOLE cascade (BP/def2-TZVP opt + clustering →
 BP/def2-TZVPD-FINE single point) driven by a **self-contained `turbomoleio` backend**
 (no dependency on the legacy `scripts/*.sh`). All `.cosmo` at **ε = ∞**. Bombesin is
@@ -200,11 +200,11 @@ All environment- and chemistry-specific values live in `config/config.template.y
 
 | stage | module | status |
 |-------|--------|--------|
-| 0 Input | `stage0_input.py` | real (P2); AlphaFold mmCIF intake coming (P5) |
-| 4 MD front-end | `stage4_md/` | coming (P5) — currently mock |
-| 1 Confgen / ingest | `stage1_confgen.py` | ingest real (P2); COSMOconf generation P4 |
+| 0 Input | `stage0_input.py`, `af_intake.py` | real (P2 + AlphaFold intake P5a) |
+| 4 MD front-end | `stage4_md/` | frames/clustering real (P5); OpenMM/GROMACS engine optional/HPC |
+| 1 Confgen / ingest | `stage1_confgen.py` | ingest real (P2); COSMOconf generation on HPC |
 | RMSD gate | `cluster.py` | real (P2) |
-| 2 DFT / COSMO | `stage2_dft/` | coming (P4) — currently mock |
+| 2 DFT / COSMO | `stage2_dft/` | real (P4); TURBOMOLE/COSMOconf run on HPC |
 | 3 COSMOtherm | `stage3_cosmotherm/` | input builder real (P3); execution HPC |
 | Sensitivity | `parse.py`, `sensitivity.py` | real (P3) |
 
