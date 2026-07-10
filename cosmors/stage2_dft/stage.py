@@ -63,6 +63,8 @@ def _real_conformer_turbomole(cfg: Config, d: Path, base: str, charge: int) -> P
     for tool in ("define", "cosmoprep"):
         with open(d / f"{tool}.in") as inp, open(d / f"{tool}.log", "w") as log:
             subprocess.run([tool], cwd=d, stdin=inp, stdout=log, stderr=subprocess.STDOUT, check=True)
+    if cfg.dft.scf_tuning:
+        control.apply_scf_tuning(str(d / "control"))
     with open(d / "ridft.out", "w") as log:
         subprocess.run(["ridft"], cwd=d, stdout=log, stderr=subprocess.STDOUT, check=True)
     return d / cosmo

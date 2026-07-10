@@ -62,6 +62,7 @@ class DFT:
     backend: str = "cosmoconf"   # cosmoconf (orchestrates cascade) | turbomole (self-contained)
     memory_mb: int = 1000
     geometry_opt: bool = False
+    scf_tuning: bool = True      # inject BP-TZVPD-FINE SCF tuning (scfiterlimit 300 + damping + Fermi net)
 
 
 @dataclass

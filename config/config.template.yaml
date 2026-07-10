@@ -38,6 +38,7 @@ dft:                        # Stage 2 DFT/COSMO driver
   backend: cosmoconf        # cosmoconf (orchestrates cascade) | turbomole (self-contained per-conformer)
   memory_mb: 1000           # define memory (MB)
   geometry_opt: false       # jobex geometry opt before the COSMO single point
+  scf_tuning: true          # inject BP-TZVPD-FINE SCF tuning (mirrors _tune_scf.sh) so ridft converges
 
 ctd:
   default: BP_TZVPD_FINE_25.ctd

@@ -35,3 +35,15 @@ def test_cosmoprep_refuses_solvent_specific():
     cfg.theory.cosmo_epsilon = "78.4"
     with pytest.raises(ValueError):
         control.cosmoprep_input(cfg, "x.cosmo")
+
+
+def test_apply_scf_tuning(tmp_path):
+    ctrl = tmp_path / "control"
+    ctrl.write_text("$title\n$scfiterlimit 30\n$scfdamp start=0.500 step=0.050 min=0.100\n$end\n")
+    control.apply_scf_tuning(str(ctrl))
+    t = ctrl.read_text()
+    assert "$scfiterlimit      300" in t          # raised from the default 30
+    assert "start=0.700" in t                     # damping replaced
+    assert "$scforbitalshift  automatic=.3" in t  # inserted (was absent)
+    assert "$fermi" in t                          # Fermi net appended
+    assert t.count("$end") == 1                   # still exactly one $end
