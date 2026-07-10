@@ -1,0 +1,12 @@
+# First end-to-end target: bombesin (14-residue flexible peptide, neutral).
+# Everything not set here inherits config.template.yaml defaults (BP-TZVPD-FINE,
+# relative solubility, the crystallization solvent panel, MD front-end on).
+compound:
+  name: bombesin
+  input_path: molecules/bombesin/bombesin.sdf
+  charge: 0
+
+md:
+  enabled: true          # flexible peptide -> MD is the conformer source
+  engine: openmm
+  temperature_K: 500

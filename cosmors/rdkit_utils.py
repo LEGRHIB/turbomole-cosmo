@@ -123,7 +123,13 @@ def write_sdf(path: str, mols: List, prop: Optional[dict] = None) -> None:
 
 
 def best_rms(probe, ref) -> float:
-    """Symmetry-aware best RMSD between two conformers of the same molecule."""
+    """Aligned RMSD between two conformers of the SAME molecule (identity atom map).
+
+    Frames/conformers here share atom ordering, so a direct Kabsch alignment is exact
+    and O(N). GetBestRMS's automorphism search is unnecessary and OOMs on large
+    symmetric peptides (bombesin), so we map atom i -> i explicitly.
+    """
     Chem, _ = require_rdkit()
     from rdkit.Chem import rdMolAlign
-    return rdMolAlign.GetBestRMS(Chem.Mol(probe), Chem.Mol(ref))
+    amap = [(i, i) for i in range(probe.GetNumAtoms())]
+    return rdMolAlign.AlignMol(Chem.Mol(probe), ref, atomMap=amap)

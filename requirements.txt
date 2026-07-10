@@ -1,0 +1,11 @@
+# Core cosmors dependencies (pip). See environment.yml for the conda equivalent.
+pyyaml>=5.4
+numpy>=1.21
+matplotlib>=3.4
+rdkit>=2022.09
+pytest>=7
+
+# --- optional, install only where used ---
+# openmm>=8.0        # Stage 4 MD front-end (or: conda install -c conda-forge openmm)
+# mdanalysis>=2.0    # trajectory handling
+# turbomoleio        # HPC: TURBOMOLE `define` automation (heavy — pulls pymatgen)

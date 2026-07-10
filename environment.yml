@@ -1,0 +1,18 @@
+# conda environment for the cosmors pipeline.
+#   conda env create -f environment.yml && conda activate cosmors && pip install -e .
+name: cosmors
+channels:
+  - conda-forge
+dependencies:
+  - python >=3.9
+  - pyyaml >=5.4
+  - numpy >=1.21
+  - matplotlib >=3.4        # sigma-profile plotting
+  - rdkit >=2022.09         # 3D embed, Butina clustering, SDF I/O, AlphaFold transplant
+  - pytest >=7
+  # --- optional: Stage 4 MD front-end (uncomment to enable real MD) ---
+  # - openmm >=8.0
+  # - mdanalysis >=2.0
+  # --- optional: HPC TURBOMOLE define automation (heavy — pulls pymatgen) ---
+  # - pip:
+  #   - turbomoleio
