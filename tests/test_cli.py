@@ -16,10 +16,11 @@ def test_validate_config_ok(capsys):
     assert "config OK" in capsys.readouterr().out
 
 
-def test_real_run_refused_without_flag(tmp_path, capsys):
-    rc = main(["--config", TEMPLATE, "--workdir", str(tmp_path), "run"])
-    assert rc == 3
-    assert "Refusing to run" in capsys.readouterr().err
+def test_real_stage_runs_without_mock(tmp_path):
+    pytest.importorskip("rdkit")
+    rc = main(["--config", FIXTURE, "--workdir", str(tmp_path), "input"])
+    assert rc == 0
+    assert (tmp_path / "ethanol" / "input" / "geometry.xyz").exists()
 
 
 def test_dry_run_writes_nothing(tmp_path):

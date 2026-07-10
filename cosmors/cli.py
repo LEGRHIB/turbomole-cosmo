@@ -82,11 +82,6 @@ def _print_config_status(cfg) -> int:
 
 
 def _run_stages(cfg, args, keys: List[str]) -> int:
-    if not (args.mock or args.dry_run):
-        print("Refusing to run: P1 supports only --mock or --dry-run "
-              "(commercial binaries are not available here).", file=sys.stderr)
-        return 3
-
     errors, _ = validate(cfg)
     if errors:
         print("Config invalid — run `cosmors validate-config`:", file=sys.stderr)
@@ -95,7 +90,7 @@ def _run_stages(cfg, args, keys: List[str]) -> int:
         return 2
 
     wd = WorkDir(cfg.run.workdir, cfg.compound.name)
-    mode = "dry-run" if args.dry_run else "mock"
+    mode = "dry-run" if args.dry_run else ("mock" if args.mock else "real")
     print(f"cosmors {__version__}  compound={cfg.compound.name}  "
           f"mode={mode}  workdir={wd.base}")
 
@@ -114,7 +109,7 @@ def _run_stages(cfg, args, keys: List[str]) -> int:
         fn = STAGES[key]
         result = wd.run_stage(
             key,
-            lambda d, fn=fn: fn(cfg, d, wd=wd, mock=True, dry_run=False),
+            lambda d, fn=fn: fn(cfg, d, wd=wd, mock=args.mock, dry_run=False),
             resume=resume, force=args.force,
         )
         print(result)
