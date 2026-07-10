@@ -19,6 +19,7 @@ from typing import Callable, List, Tuple
 from .config import Config
 from .models import StageResult
 from . import stage0_input, stage1_confgen, cluster as _cluster
+from . import stage2_dft, stage3_cosmotherm, sensitivity as _sensitivity
 
 _MOCK_BANNER = "# MOCK ARTIFACT — synthetic placeholder, NOT a real result.\n"
 
@@ -60,53 +61,6 @@ def stage_md(cfg: Config, stage_dir: Path, *, wd, mock: bool, dry_run: bool) -> 
     )
 
 
-def stage_dft(cfg: Config, stage_dir: Path, *, wd, mock: bool, dry_run: bool) -> StageResult:
-    """Stage 2 — COSMOconf-orchestrated TURBOMOLE DFT/COSMO (eps=inf). Real: P4."""
-    files = [(f"conf{i:02d}.mock.cosmo", f"MOCK .cosmo (eps=infinity) conformer {i}")
-             for i in (1, 2)]
-    files += [(f"conf{i:02d}.mock.energy", f"MOCK gas-phase energy conformer {i}")
-              for i in (1, 2)]
-    return _result(
-        "dft", stage_dir, dry_run=dry_run,
-        cmd=f"cosmoconf-driven {cfg.theory.functional}/{cfg.theory.basis} "
-            f"{cfg.theory.cavity} COSMO eps={cfg.theory.cosmo_epsilon} "
-            f"(self-contained turbomoleio backend)",
-        mock_files=files,
-        message="2 .cosmo + .energy at eps=infinity (mock)",
-    )
-
-
-def stage_cosmotherm(cfg: Config, stage_dir: Path, *, wd, mock: bool, dry_run: bool) -> StageResult:
-    """Stage 3 — COSMOtherm relative solubility, AUTOC conformers. Real: P3."""
-    out = (
-        "MOCK COSMOtherm output — relative solubility (log x_RS). Placeholders only.\n"
-        f"ctd={cfg.ctd.default}  T={cfg.cosmotherm.temperature_C}C\n"
-        "solvent        log10(x_RS)\nwater          -9.99  (MOCK)\nethanol        -9.99  (MOCK)\n"
-    )
-    return _result(
-        "cosmotherm", stage_dir, dry_run=dry_run,
-        cmd=f"{cfg.paths.cosmotherm_bin} <input>  (AUTOC folder-of-.cosmo, "
-            f"relative solub, force_qspr={cfg.cosmotherm.force_qspr})",
-        mock_files=[("cosmotherm.mock.out", out)],
-        message="relative-solubility screen written (mock)",
-    )
-
-
-def stage_sensitivity(cfg: Config, stage_dir: Path, *, wd, mock: bool, dry_run: bool) -> StageResult:
-    """Sensitivity report — parse per-phase weights -> decision gate. Real: P3."""
-    verdict = {
-        "is_mock": True, "single_conformer_sufficient": None, "dominant_flips": None,
-        "note": "MOCK — real verdict computed from COSMOtherm weights in P3",
-        "rule": "flag single-conformer if one conformer >0.95 weight in every phase",
-    }
-    return _result(
-        "sensitivity", stage_dir, dry_run=dry_run,
-        cmd="parse per-phase conformer weights; apply >95% / dominant-flip decision gate",
-        mock_files=[("sensitivity.mock.json", verdict)],
-        message="sensitivity verdict written (mock)",
-    )
-
-
 # --------------------------------------------------------------------------- #
 # Pipeline order
 # --------------------------------------------------------------------------- #
@@ -117,9 +71,9 @@ PIPELINE: List[Tuple[str, StageFn]] = [
     ("md", stage_md),                 # mock  (P5)
     ("confgen", stage1_confgen.run),  # real (RDKit)
     ("cluster", _cluster.run),        # real (RDKit) — enforced RMSD gate
-    ("dft", stage_dft),               # mock  (P4)
-    ("cosmotherm", stage_cosmotherm), # mock  (P3)
-    ("sensitivity", stage_sensitivity),  # mock (P3)
+    ("dft", stage2_dft.run),          # real — COSMOconf / self-contained TURBOMOLE
+    ("cosmotherm", stage3_cosmotherm.run),  # real — AUTOC input builder + runner
+    ("sensitivity", _sensitivity.run),      # real — weight parse + decision gate
 ]
 
 STAGES = dict(PIPELINE)

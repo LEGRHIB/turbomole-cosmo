@@ -44,8 +44,14 @@ def test_run_mock_full_pipeline(tmp_path):
     assert (base / "confgen" / "ensemble.sdf").exists()
     assert (base / "cluster" / "kept.sdf").exists()
     assert (base / "cluster" / "clusters.json").exists()
-    # mock DFT still stands in
-    assert list((base / "dft").glob("*.mock.cosmo"))
+    # real Stage 2 produced a .cosmo at eps=infinity + the generated define/cosmoprep inputs
+    assert (base / "dft" / "conf01.cosmo").exists()
+    assert (base / "dft" / "define.in").exists()
+    from cosmors.stage2_dft.cosmo_check import check_cosmo
+    assert check_cosmo(str(base / "dft" / "conf01.cosmo"))["ideal_conductor"]
+    # real Stage 3 built the AUTOC input; sensitivity produced a verdict
+    assert (base / "cosmotherm" / "pure-screen.inp").exists()
+    assert (base / "sensitivity" / "sensitivity.json").exists()
 
 
 def test_run_mock_is_resumable(tmp_path, capsys):

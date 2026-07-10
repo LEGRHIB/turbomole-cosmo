@@ -56,6 +56,13 @@ class Theory:
 
 
 @dataclass
+class DFT:
+    backend: str = "cosmoconf"   # cosmoconf (orchestrates cascade) | turbomole (self-contained)
+    memory_mb: int = 1000
+    geometry_opt: bool = False
+
+
+@dataclass
 class Ctd:
     default: str = "BP_TZVPD_FINE_25.ctd"
     licensed: List[str] = field(default_factory=lambda: ["BP_TZVPD_FINE_25.ctd"])
@@ -87,6 +94,7 @@ class CosmoTherm:
     solvent_panel: str = "config/solvent_panel.yaml"
     force_qspr: bool = True
     relative: bool = True
+    single_conformer_threshold: float = 0.95   # sensitivity gate: >this in every phase
 
 
 @dataclass
@@ -109,6 +117,7 @@ class Config:
     compound: Compound = field(default_factory=Compound)
     paths: Paths = field(default_factory=Paths)
     theory: Theory = field(default_factory=Theory)
+    dft: DFT = field(default_factory=DFT)
     ctd: Ctd = field(default_factory=Ctd)
     conformers: Conformers = field(default_factory=Conformers)
     md: MD = field(default_factory=MD)
@@ -184,7 +193,8 @@ def load_config(path: Optional[str] = None, apply_env: bool = True) -> Config:
     warnings: List[str] = []
     cfg = Config()
     for name, dc_type in (
-        ("compound", Compound), ("paths", Paths), ("theory", Theory), ("ctd", Ctd),
+        ("compound", Compound), ("paths", Paths), ("theory", Theory), ("dft", DFT),
+        ("ctd", Ctd),
         ("conformers", Conformers), ("md", MD), ("cosmotherm", CosmoTherm),
         ("slurm", Slurm), ("run", Run),
     ):
@@ -229,6 +239,8 @@ def validate(cfg: Config):
         errors.append("conformers.rmsd_cutoff must be > 0 (the RMSD gate is mandatory)")
     if cfg.md.engine not in ("openmm", "gromacs"):
         errors.append(f"md.engine {cfg.md.engine!r} must be 'openmm' or 'gromacs'")
+    if cfg.dft.backend not in ("cosmoconf", "turbomole"):
+        errors.append(f"dft.backend {cfg.dft.backend!r} must be 'cosmoconf' or 'turbomole'")
 
     return errors, warnings
 

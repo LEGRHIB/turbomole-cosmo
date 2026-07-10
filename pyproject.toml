@@ -23,7 +23,7 @@ dev = ["pytest>=7"]
 cosmors = "cosmors.cli:main"
 
 [tool.setuptools]
-packages = ["cosmors"]
+packages = ["cosmors", "cosmors.stage2_dft", "cosmors.stage3_cosmotherm"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
