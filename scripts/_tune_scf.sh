@@ -1,10 +1,9 @@
 #!/bin/bash
 # _tune_scf.sh — Apply protocol-specific SCF tuning to control file in cwd.
 #
-# For BP-TZVPD-* | BP-SVP-FINE | BP-SVP-FINE-ANNEAL | BP-TZVPD-FINE-ANNEAL
-# protocols, replaces the default scfiterlimit / scfdamp / scforbitalshift
-# lines in `control` with values tuned for difficult convergence on large
-# molecules:
+# For BP-TZVPD-* | BP-TZVP-* | BP-SVP-FINE | BP-SVP-FINE-ANNEAL protocols,
+# replaces the default scfiterlimit / scfdamp / scforbitalshift lines in
+# `control` with values tuned for difficult convergence on large molecules:
 #   $scfiterlimit      300
 #   $scfdamp   start=0.700  step=0.050  min=0.050
 #   $scforbitalshift  automatic=.3
@@ -12,19 +11,30 @@
 # with metallic-character HOMO/LUMO gaps (e.g. large peptides/proteins).
 # The $fermi block flavor depends on the protocol:
 #
-#   - default (BP-TZVPD-FINE, BP-TZVPD-OPT, BP-SVP-FINE):
+#   - default (BP-TZVPD-FINE, BP-SVP-FINE):
 #       $fermi tmstrt=300 tmend=300 tmfac=1.0 hlcrt=1.0e-3 stop=1.0e-3
 #     Constant 300 K Fermi smearing. Activates only if HOMO/LUMO gap < 1 mHa.
 #
-#   - *FINE-ANNEAL (BP-SVP-FINE-ANNEAL, BP-TZVPD-FINE-ANNEAL): annealed
-#     schedule for systems where the gap fluctuates around kT(300 K) ≈ 1 mHa
-#     — Fermi window keeps switching between "sees the gap" and "sees
-#     through it", losing the bracket, COSMO cavity construction
-#     fragments, and the SCF diverges (~+200k Eh blowup) — observed on
-#     lysozyme +11 at BP-TZVPD-FINE in jobs 66867524 / 66871359 (2026-05-22):
+#   - *FINE-ANNEAL* (BP-TZVP-FINE-ANNEAL, BP-TZVPD-FINE-ANNEAL,
+#     BP-TZVPD-FINE-ANNEAL-BOOT): annealed schedule for systems where the gap
+#     fluctuates around kT(300 K) ≈ 1 mHa — Fermi window keeps switching
+#     between "sees the gap" and "sees through it", losing the bracket, COSMO
+#     cavity construction fragments, and the SCF diverges (~+200k Eh blowup) —
+#     observed on lysozyme +11 at BP-TZVPD-FINE in jobs 66867524 / 66871359
+#     (2026-05-22):
 #       $fermi tmstrt=2000 tmend=300 tmfac=0.95 hlcrt=1.0e-3 stop=1.0e-3
 #     Start at 2000 K (kT ≈ 6 mHa — wide enough to smooth a 2-30 mHa gap
 #     fluctuation), anneal back to 300 K at 5% per SCF cycle.
+#
+# The protocol NAME is load-bearing. The *FINE-ANNEAL* substring selects the
+# annealed Fermi flavor here, and scripts/cosmotherm_screen.sh keys the
+# COSMOtherm parameterization off the BP-TZVP-* / BP-TZVPD-* prefix. Renaming a
+# protocol directory silently changes the method.
+#
+# The *HARD*, *SCFTOL* and *PLAIN* branches were removed on 2026-08-13 together
+# with the protocols that used them: none converged whole-molecule def2-TZVPD on
+# lysozyme. See docs/protocol-experiments.md for what each one did, and tag
+# protocol-ladder-2026-07 to recover the files.
 #
 # For other protocols (def2-SVP, etc.), this is a no-op.
 #
@@ -44,42 +54,13 @@ if [[ ! -f control ]]; then
 fi
 
 case "$PROTOCOL" in
-  *PLAIN*)
-    # Reference-style plain SCF: TURBOMOLE defaults — NO Fermi smearing, NO
-    # level-shift override, NO $scftol, default damping. All six prior TZVPD
-    # rungs carried the annealed Fermi; "plain default SCF" is the one config
-    # never tried, and is exactly what the working reference pipeline uses.
-    # Only change: raise the iteration cap so a slow-but-stable SCF isn't cut
-    # off at define's default limit — a cap, not a stabilizer.
-    if grep -q '^\$scfiterlimit' control; then
-      sed -i 's|^\$scfiterlimit.*|$scfiterlimit      300|' control
-    else
-      sed -i "/^\\\$end/i \$scfiterlimit      300" control
-    fi
-    grep -q '^\$scfiterlimit' control \
-      && echo "  PLAIN SCF: TM defaults (no Fermi / shift / scftol), scfiterlimit=300" \
-      || { echo "ERROR: failed to set scfiterlimit for PLAIN" >&2; exit 1; }
-    ;;
   BP-TZVPD-*|BP-TZVP-*|BP-SVP-FINE|BP-SVP-FINE-ANNEAL)
-    # Hard-case SCF tuning for ill-conditioned (near-linearly-dependent) systems:
-    # any *HARD* protocol uses TURBOMOLE's recommended heavy damping + large level
-    # shift (suppresses occ-virt mixing into the near-singular subspace); all other
-    # protocols keep the standard tuning.
-    if [[ "$PROTOCOL" == *HARD* ]]; then
-      sed -i \
-        -e 's|^\$scfiterlimit.*|$scfiterlimit      999|' \
-        -e 's|^\$scfdamp.*|$scfdamp   start=5.000  step=0.050  min=0.500|' \
-        -e 's|^\$scforbitalshift.*|$scforbitalshift  automatic=1.0|' \
-        control
-      echo "  HARD SCF tuning: scfiterlimit=999, scfdamp 5.000/0.050/0.500, scforbitalshift=1.0"
-    else
-      sed -i \
-        -e 's|^\$scfiterlimit.*|$scfiterlimit      300|' \
-        -e 's|^\$scfdamp.*|$scfdamp   start=0.700  step=0.050  min=0.050|' \
-        -e 's|^\$scforbitalshift.*|$scforbitalshift  automatic=.3|' \
-        control
-      echo "  tuned SCF applied: scfiterlimit=300, scfdamp 0.700/0.050/0.050, scforbitalshift=.3"
-    fi
+    sed -i \
+      -e 's|^\$scfiterlimit.*|$scfiterlimit      300|' \
+      -e 's|^\$scfdamp.*|$scfdamp   start=0.700  step=0.050  min=0.050|' \
+      -e 's|^\$scforbitalshift.*|$scforbitalshift  automatic=.3|' \
+      control
+    echo "  tuned SCF applied: scfiterlimit=300, scfdamp 0.700/0.050/0.050, scforbitalshift=.3"
 
     # Verify the three SCF groups are present (value-agnostic)
     if ! grep -q '^\$scfdamp' control \
@@ -92,12 +73,11 @@ case "$PROTOCOL" in
     fi
 
     # Pick the $fermi flavor based on protocol.
-    # Any *FINE-ANNEAL variant (BP-SVP-FINE-ANNEAL, BP-TZVPD-FINE-ANNEAL, ...)
-    # uses the annealed 2000K -> 300K schedule. Empirically required for
-    # highly-charged proteins where the HOMO/LUMO gap fluctuates around
-    # kT(300 K) ≈ 1 mHa: a constant 300 K Fermi window keeps losing the
-    # bracket, the system enters a Fermi-recovery loop, COSMO cavities
-    # fracture, and the SCF diverges around cycle 6-25 with +200k Eh
+    # Any *FINE-ANNEAL* variant uses the annealed 2000K -> 300K schedule.
+    # Empirically required for highly-charged proteins where the HOMO/LUMO gap
+    # fluctuates around kT(300 K) ≈ 1 mHa: a constant 300 K Fermi window keeps
+    # losing the bracket, the system enters a Fermi-recovery loop, COSMO
+    # cavities fracture, and the SCF diverges around cycle 6-25 with +200k Eh
     # energy blowups (observed on lysozyme +11 at BP-TZVPD-FINE in
     # jobs 66867524 / 66871359, 2026-05-22).
     if [[ "$PROTOCOL" == *FINE-ANNEAL* ]]; then
@@ -119,19 +99,6 @@ case "$PROTOCOL" in
       echo "  $FERMI_DESC added (auto-activates if HOMO/LUMO gap < 1 mHa)"
     else
       echo "  Fermi smearing already present in control — leaving as-is"
-    fi
-
-    # *SCFTOL* variants: tighten the integral-evaluation threshold. BIOVIA's
-    # recommendation for diffuse-function-driven SCF divergence — keeps the small
-    # long-range two-electron integrals that default screening discards, reducing
-    # the numerical noise that (with the near-singular overlap) blows up the SCF.
-    if [[ "$PROTOCOL" == *SCFTOL* ]]; then
-      if ! grep -q '^\$scftol' control; then
-        sed -i "/^\\\$end/i \$scftol 1d-15" control
-      fi
-      grep -q '^\$scftol' control \
-        && echo "  \$scftol 1d-15 added (tight integral threshold, per BIOVIA)" \
-        || { echo "ERROR: failed to add \$scftol to control" >&2; exit 1; }
     fi
     ;;
   *)
