@@ -10,3 +10,6 @@ md:
   enabled: true          # flexible peptide -> MD is the conformer source
   engine: openmm
   temperature_K: 500
+
+dft:
+  backend: turbomole      # self-contained TURBOMOLE backend (matches your protocols)
