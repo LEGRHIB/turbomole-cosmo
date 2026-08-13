@@ -67,3 +67,9 @@ docs/*.pdf
 molecules/**/charge.txt
 # pre-protonation geometry/charge backups
 molecules/**/*.pre-propka*
+
+# AlphaFold / structure-prediction output dumps (local only)
+fold_*/
+
+# scratch: files staged for manual deletion
+_to_delete/
