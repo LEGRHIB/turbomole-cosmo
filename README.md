@@ -74,6 +74,18 @@ checkpointed every 5 min and a warm-restartable `mos` is saved on exit
 (`#SBATCH --signal=B:TERM@600`), so a resubmit continues the SCF instead of
 cold-starting.
 
+**BP-TZVP-FINE-ANNEAL** — def2-TZVP, no diffuse functions, so the AO overlap stays
+well-conditioned where TZVPD goes near-singular. **Stage A** of the bootstrap, and a
+valid deliverable in its own right: `cosmotherm_screen.sh` pairs a TZVP `.cosmo` with
+COSMOtherm's `BP_TZVP_25.ctd` + BP-TZVP-COSMO database automatically. This is the level
+lysozyme is reported at.
+
+**BP-TZVPD-FINE-ANNEAL-BOOT** — **Stage B**: same TZVPD target, but `define` starts from
+Stage A's converged orbitals (`use ../BP-TZVP-FINE-ANNEAL/control`) instead of a cold EHT
+guess. Needs Stage A's directory beside it in `molecules/<mol>/`. Escalation path for
+systems where a single-shot TZVPD diverges; see `docs/protocol-experiments.md` for where
+it stands on lysozyme.
+
 ### Auto-tuned SCF (BP-TZVPD-*)
 
 `prep_cosmo.sh` → `_tune_scf.sh` applies to `control`:
@@ -96,6 +108,8 @@ turbomole-cosmo/
 ├── protocols/
 │   ├── BP-TZVPD-FINE/            # production single-point (ridft)
 │   ├── BP-TZVPD-FINE-ANNEAL/     # + annealed Fermi, crash/timeout-safe slurm
+│   ├── BP-TZVP-FINE-ANNEAL/      # Stage A — no diffuse functions
+│   ├── BP-TZVPD-FINE-ANNEAL-BOOT/ # Stage B — projects Stage A's MOs
 │   └── cosmotherm-screen/        # Phase 7: COSMO-RS solvent screen
 ├── scripts/
 │   ├── prepare_molecule.py       # PDB/SDF → clean → protonate → XYZ + charge
@@ -123,6 +137,11 @@ turbomole-cosmo/
 - Code flows GitHub → Mac → cluster (`git pull` on the cluster; never edit there).
   Outputs flow cluster → Mac (cluster is source of truth); `.cosmo` / `mos` /
   `charge.txt` are gitignored.
+- **Never rename a protocol directory.** The name selects the method in two places:
+  `_tune_scf.sh` matches `*FINE-ANNEAL*` to choose the annealed Fermi schedule, and
+  `cosmotherm_screen.sh` picks the COSMOtherm parameterization and solvent database from
+  the `BP-TZVP-*` / `BP-TZVPD-*` prefix. A rename changes the science without changing a
+  single file's contents.
 
 ## Troubleshooting
 
@@ -130,6 +149,13 @@ turbomole-cosmo/
 failure (gap < kT; charged peptides/proteins). Use the `*-ANNEAL` protocol. Confirm
 the annealed schedule landed: `grep '^\$fermi' control` should show `tmstrt=2000`.
 Warm-restart by resubmitting (no re-prep) — the saved `mos` is the guess.
+
+**SCF detonates on iteration 1** (`NORM[dD]` ≈ 10¹⁰, 1e/2e energies in the millions)
+— not a gap problem, so Fermi smearing won't help. The def2-TZVPD overlap matrix is
+near-singular and `ridft` has no linear-dependence projection. Go through Stage A
+(`BP-TZVP-FINE-ANNEAL`) and then Stage B (`BP-TZVPD-FINE-ANNEAL-BOOT`), which starts
+from Stage A's orbitals. On whole proteins this is still unresolved —
+`docs/protocol-experiments.md`.
 
 **`define` OOMs on large molecules** — the EHT guess at def2-TZVPD needs >200 GB
 for ~2000-atom systems; run prep with `--slurm --partition bigmem`.
